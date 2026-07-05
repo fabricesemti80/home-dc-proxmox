@@ -4,6 +4,19 @@
 # Backup storage location (must exist in Proxmox)
 backup_storage: "nfs-proxmox-backup"
 
+pbs_storage:
+  enabled: false
+  name: pbs-nfs-proxmox-backup
+  server: 10.0.40.16
+  datastore: nfs-proxmox-backup
+  username: root@pam
+  password: "{{ lookup('env', 'ANSI_ROOT_PASSWORD') }}"
+  fingerprint: ""
+  nodes:
+    - pve-0
+    - pve-1
+    - pve-2
+
 # VM Backup Configuration
 vm_backup:
   name: "vm-backup"

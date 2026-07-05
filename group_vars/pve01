@@ -261,20 +261,33 @@ proxmox_notification_test: "{{ lookup('env', 'GMAIL_SMTP_TEST') | default('false
 # ---------------------------------------------------------------------------- #
 #                              Backup Configuration                            #
 # ---------------------------------------------------------------------------- #
-# Automated backup configuration for VMs and templates
-# Backups are stored on NFS share nfs-proxmox-backup
+# Automated backup configuration for VMs and containers.
+# Backups are stored on Proxmox Backup Server, backed by the NFS backup share.
 
-# VM Backup Job - Production VMs
+pbs_storage:
+  enabled: true
+  name: pbs-nfs-proxmox-backup
+  server: 10.0.40.16
+  datastore: nfs-proxmox-backup
+  username: root@pam
+  password: "{{ lookup('env', 'ANSI_ROOT_PASSWORD') }}"
+  fingerprint: "17:42:d9:88:15:9f:94:67:c1:d0:5c:d2:12:fe:32:b8:bd:35:50:55:44:b5:18:54:7e:3f:6e:8d:47:80:18:b5"
+  nodes:
+    - pve-0
+    - pve-1
+    - pve-2
+
+# Weekly Kubernetes node backup job.
 vm_backup:
-  name: "vm-backup"
-  schedule: "01:00" # 1:00 AM (24-hour format)
+  name: "kubernetes-weekly"
+  schedule: "03:00" # 3:00 AM (24-hour format)
   dow: "sun" # Sunday
-  vm_ids: [ 1020, 1021 ] # VM IDs to backup (changeable) #FIXME: might not work! needs looking at!
+  vm_ids: [ 4090, 4091, 4092, 4093, 4094, 4095 ]
   enabled: true
   compress: "zstd" # Best compression
   mode: "snapshot" # Snapshot mode (no downtime)
   retention:
-    keep_daily: 7 # Keep daily backups for 1 week
+    keep_daily: 1
     keep_weekly: 4 # Keep weekly backups for 1 month
     keep_monthly: 3 # Keep monthly backups for 3 months
   notification: true
@@ -286,7 +299,7 @@ template_backup:
   schedule: "02:00" # 2:00 AM (24-hour format)
   dow: "sun" # Sunday (after VM backup)
   vm_ids: [ 100, 101, 102, 103, 104 ] # Template IDs to backup (changeable) #FIXME: might not work! needs looking at!
-  enabled: true
+  enabled: false
   compress: "zstd"
   mode: "snapshot"
   retention:
@@ -304,7 +317,7 @@ backup_global:
   lockwait: 180 # Wait up to 3 hours for VM lock
 
 # Backup storage (must match storage configuration above)
-backup_storage: "nfs-proxmox-backup"
+backup_storage: "pbs-nfs-proxmox-backup"
 
 # Email notifications (uses Gmail SMTP configuration)
 backup_notification_email: "emilfabrice@gmail.com"

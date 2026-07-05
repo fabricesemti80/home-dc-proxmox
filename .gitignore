@@ -3,6 +3,7 @@ files/root_pve_rsa
 
 # Environment variables (contains sensitive credentials)
 .envrc
+.env
 
 # API tokens (contains sensitive API tokens)
 tokens/

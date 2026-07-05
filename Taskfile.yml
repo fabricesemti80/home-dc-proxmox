@@ -29,6 +29,10 @@ tasks:
   run-site:
     cmds:
       - |
+        set -a
+        [[ ! -f .env ]] || . ./.env
+        set +a
+
         doppler run --project {{.DOPPLER_PROJECT}} -- bash -lc '
           set -euo pipefail
           key_path="${ANSIBLE_SSH_PRIVATE_KEY_FILE:-$HOME/.ssh/fs_home_rsa}"
@@ -53,6 +57,10 @@ tasks:
 
         playbook="$1"
         shift
+
+        set -a
+        [[ ! -f .env ]] || . ./.env
+        set +a
 
         doppler run --project {{.DOPPLER_PROJECT}} -- bash -lc '
           set -euo pipefail
