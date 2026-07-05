@@ -266,16 +266,30 @@ proxmox_notification_test: "{{ lookup('env', 'GMAIL_SMTP_TEST') | default('false
 
 pbs_storage:
   enabled: true
-  name: pbs-nfs-proxmox-backup
+  name: pbs-proxmox-backup
   server: 10.0.40.16
-  datastore: nfs-proxmox-backup
+  datastore: proxmox-pbs-datastore
   username: root@pam
   password: "{{ lookup('env', 'ANSI_ROOT_PASSWORD') }}"
-  fingerprint: "17:42:d9:88:15:9f:94:67:c1:d0:5c:d2:12:fe:32:b8:bd:35:50:55:44:b5:18:54:7e:3f:6e:8d:47:80:18:b5"
+  fingerprint: "89:cc:99:20:0b:bf:a6:0a:db:9a:a7:58:cf:61:67:ef:91:d8:e1:de:9c:df:fd:33:4d:59:e5:d4:45:76:d9:15"
   nodes:
     - pve-0
     - pve-1
     - pve-2
+
+pbs_backup_jobs:
+  - id: vm_packup_pbs
+    pool: vm_packup_pbs
+    schedule: "sun 04:00"
+    mode: snapshot
+    enabled: false
+    prune_backups: "keep-daily=1,keep-weekly=4,keep-monthly=3"
+  - id: template_backup_pbs
+    pool: template_backup_pbs
+    schedule: "sun 05:00"
+    mode: snapshot
+    enabled: false
+    prune_backups: "keep-daily=3,keep-weekly=2,keep-monthly=6"
 
 # Weekly Kubernetes node backup job.
 vm_backup:
@@ -316,8 +330,8 @@ backup_global:
   ionice: 7 # Lowest I/O priority (don't impact VMs)
   lockwait: 180 # Wait up to 3 hours for VM lock
 
-# Backup storage (must match storage configuration above)
-backup_storage: "pbs-nfs-proxmox-backup"
+# Backup storage for existing backup jobs. Keep this on NFS until jobs are moved.
+backup_storage: "nfs-proxmox-backup"
 
 # Email notifications (uses Gmail SMTP configuration)
 backup_notification_email: "emilfabrice@gmail.com"

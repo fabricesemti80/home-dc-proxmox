@@ -28,10 +28,11 @@ This Ansible role generates API tokens for Packer and Terraform users in Proxmox
 
 ```
 tokens/
-├── packer@pve-automation.token    # Packer token details
-├── terraform@pve-automation.token # Terraform token details
-├── packer-config.pkr.hcl         # Packer configuration
-└── terraform-config.tf           # Terraform configuration
+├── packer@pve-automation.token      # Packer token details
+├── terraform@pve-automation.token   # Terraform token details
+├── root@pam-terraform-root.token    # Terraform root token for privileged LXC feature flags
+├── packer-config.pkr.hcl            # Packer configuration
+└── terraform-config.tf              # Terraform configuration
 ```
 
 ## Configuration
@@ -46,8 +47,14 @@ api_tokens:
     privsep: 0  # Disable privilege separation (required for automation)
     
   - user: "terraform@pve"
-    token_name: "automation" 
+    token_name: "automation"
     comment: "Terraform automation token"
+    expire: 0  # Never expire
+    privsep: 0  # Disable privilege separation (required for automation)
+
+  - user: "root@pam"
+    token_name: "terraform-root"
+    comment: "Terraform root token for privileged LXC feature flags"
     expire: 0  # Never expire
     privsep: 0  # Disable privilege separation (required for automation)
 ```

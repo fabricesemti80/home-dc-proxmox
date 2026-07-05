@@ -15,6 +15,12 @@ api_tokens:
   expire: 0 # Never expire
   privsep: 0 # Disable privilege separation (required for automation tools)
 
+- user: "root@pam"
+  token_name: "terraform-root"
+  comment: "Terraform root token for privileged LXC feature flags"
+  expire: 0 # Never expire
+  privsep: 0 # Disable privilege separation (required for automation tools)
+
 # Token storage configuration
 token_storage:
   directory: "tokens" # Directory to store token files

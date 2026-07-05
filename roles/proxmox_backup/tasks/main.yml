@@ -1,120 +1,76 @@
 ---
-- name: Ensure PBS password is available
-  ansible.builtin.assert:
-    that:
-      - pbs_storage.password | length > 0
-    fail_msg: "Set ANSI_ROOT_PASSWORD so Proxmox can authenticate to PBS."
-  when: pbs_storage.enabled
-  run_once: true
-  no_log: true
-
-- name: Ensure PBS storage exists in Proxmox
-  community.proxmox.proxmox_storage:
-    api_host: "{{ ansible_host }}"
-    api_user: "{{ pve_api_user }}"
-    api_token_id: "{{ pve_api_token_id }}"
-    api_token_secret: "{{ pve_api_token_secret }}"
-    validate_certs: false
-    name: "{{ pbs_storage.name }}"
-    type: pbs
-    content:
-      - backup
-    nodes: "{{ pbs_storage.nodes }}"
-    pbs_options:
-      server: "{{ pbs_storage.server }}"
-      datastore: "{{ pbs_storage.datastore }}"
-      username: "{{ pbs_storage.username }}"
-      password: "{{ pbs_storage.password }}"
-      fingerprint: "{{ pbs_storage.fingerprint }}"
-    state: present
-  delegate_to: localhost
-  run_once: true
-  no_log: true
-  when: pbs_storage.enabled
-
-- name: Set backup storage from PBS configuration
-  ansible.builtin.set_fact:
-    backup_storage: "{{ pbs_storage.name }}"
-  when: pbs_storage.enabled
-  run_once: true
-
-- name: Verify backup storage exists
-  ansible.builtin.command: pvesm status -storage {{ backup_storage }}
+- name: Check PBS storage
+  ansible.builtin.command: pvesm status --storage {{ pbs_storage.name }}
+  register: pbs_storage_status
   changed_when: false
-  run_once: true
-
-- name: Check VM backup job
-  ansible.builtin.command: pvesh get /cluster/backup/{{ vm_backup.name }} --output-format json
-  register: vm_backup_existing
   failed_when: false
-  changed_when: false
+  run_once: true
+  when: pbs_storage.enabled | default(false)
+
+- name: Add PBS storage
+  ansible.builtin.command: >-
+    pvesm add pbs {{ pbs_storage.name }}
+    --server {{ pbs_storage.server }}
+    --datastore {{ pbs_storage.datastore }}
+    --username {{ pbs_storage.username }}
+    --password {{ pbs_storage.password }}
+    --fingerprint {{ pbs_storage.fingerprint }}
+    --content backup
+  no_log: true
   run_once: true
   when:
-    - vm_backup.enabled
-    - vm_backup.vm_ids | length > 0
+    - pbs_storage.enabled | default(false)
+    - pbs_storage_status.rc != 0
 
-- name: Configure VM backup job
+- name: Check PBS backup pools
+  ansible.builtin.command: pvesh get /pools --poolid {{ item.pool }} --output-format json
+  register: pbs_backup_pool_status
+  changed_when: false
+  failed_when: false
+  run_once: true
+  loop: "{{ pbs_backup_jobs | default([]) }}"
+  loop_control:
+    label: "{{ item.pool }}"
+
+- name: Create PBS backup pools
   ansible.builtin.command: >-
-    pvesh {{ 'set' if vm_backup_existing.rc == 0 else 'create' }}
-    {{ '/cluster/backup/' ~ vm_backup.name if vm_backup_existing.rc == 0 else '/cluster/backup' }}
-    {% if vm_backup_existing.rc != 0 %}--id {{ vm_backup.name }}{% endif %}
-    --schedule "{{ vm_backup.dow }} {{ vm_backup.schedule }}"
-    --vmid {{ vm_backup.vm_ids | join(',') }}
-    --storage {{ backup_storage }}
-    --compress {{ vm_backup.compress }}
-    --mode {{ vm_backup.mode }}
-    --enabled {{ vm_backup.enabled | int }}
-    --prune-backups keep-daily={{ vm_backup.retention.keep_daily }},keep-weekly={{ vm_backup.retention.keep_weekly }},keep-monthly={{ vm_backup.retention.keep_monthly }}
-    --mailnotification {{ 'failure' if vm_backup.email_on_failure else ('always' if vm_backup.notification else 'never') }}
-    {% if backup_notification_email is defined %}--mailto {{ backup_notification_email }}{% endif %}
+    pvesh create /pools
+    --poolid {{ item.item.pool }}
+    --comment "Empty placeholder pool for {{ item.item.id }}"
+  run_once: true
+  loop: "{{ pbs_backup_pool_status.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.pool }}"
+  when: item.rc != 0
+
+- name: Check PBS backup jobs
+  ansible.builtin.command: pvesh get /cluster/backup/{{ item.id }} --output-format json
+  register: pbs_backup_job_status
+  changed_when: false
+  failed_when: false
+  run_once: true
+  loop: "{{ pbs_backup_jobs | default([]) }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Configure PBS backup jobs
+  ansible.builtin.command: >-
+    pvesh {{ 'set' if item.rc == 0 else 'create' }}
+    {{ '/cluster/backup/' ~ item.item.id if item.rc == 0 else '/cluster/backup' }}
+    {% if item.rc != 0 %}--id {{ item.item.id }}{% endif %}
+    --pool {{ item.item.pool }}
+    --storage {{ pbs_storage.name }}
+    --schedule "{{ item.item.schedule }}"
+    --mode {{ item.item.mode }}
+    --enabled {{ item.item.enabled | int }}
+    --compress zstd
+    --prune-backups {{ item.item.prune_backups }}
+    --mailnotification failure
     --ionice {{ backup_global.ionice }}
     --lockwait {{ backup_global.lockwait }}
-    {% if backup_global.bandwidth_limit > 0 %}--bwlimit {{ backup_global.bandwidth_limit }}{% endif %}
-  register: vm_backup_configure
-  changed_when: true
+  changed_when: item.rc != 0
   run_once: true
-  when:
-    - vm_backup.enabled
-    - vm_backup.vm_ids | length > 0
-
-- name: Check template backup job
-  ansible.builtin.command: pvesh get /cluster/backup/{{ template_backup.name }} --output-format json
-  register: template_backup_existing
-  failed_when: false
-  changed_when: false
-  run_once: true
-  when:
-    - template_backup.enabled
-    - template_backup.vm_ids | length > 0
-
-- name: Configure template backup job
-  ansible.builtin.command: >-
-    pvesh {{ 'set' if template_backup_existing.rc == 0 else 'create' }}
-    {{ '/cluster/backup/' ~ template_backup.name if template_backup_existing.rc == 0 else '/cluster/backup' }}
-    {% if template_backup_existing.rc != 0 %}--id {{ template_backup.name }}{% endif %}
-    --schedule "{{ template_backup.dow }} {{ template_backup.schedule }}"
-    --vmid {{ template_backup.vm_ids | join(',') }}
-    --storage {{ backup_storage }}
-    --compress {{ template_backup.compress }}
-    --mode {{ template_backup.mode }}
-    --enabled {{ template_backup.enabled | int }}
-    --prune-backups keep-daily={{ template_backup.retention.keep_daily }},keep-weekly={{ template_backup.retention.keep_weekly }},keep-monthly={{ template_backup.retention.keep_monthly }}
-    --mailnotification {{ 'failure' if template_backup.email_on_failure else ('always' if template_backup.notification else 'never') }}
-    {% if backup_notification_email is defined %}--mailto {{ backup_notification_email }}{% endif %}
-    --ionice {{ backup_global.ionice }}
-    --lockwait {{ backup_global.lockwait }}
-    {% if backup_global.bandwidth_limit > 0 %}--bwlimit {{ backup_global.bandwidth_limit }}{% endif %}
-  changed_when: true
-  run_once: true
-  when:
-    - template_backup.enabled
-    - template_backup.vm_ids | length > 0
-
-- name: Display backup job configuration
-  ansible.builtin.debug:
-    msg: |
-      Backup jobs configured:
-      - VM Backup ({{ vm_backup.name }}): {{ vm_backup.vm_ids | join(', ') }} - Schedule: {{ vm_backup.dow }} {{ vm_backup.schedule }}
-      - Storage: {{ backup_storage }}
-      - Retention: Daily={{ vm_backup.retention.keep_daily }}, Weekly={{ vm_backup.retention.keep_weekly }}, Monthly={{ vm_backup.retention.keep_monthly }}
-  run_once: true
+  loop: "{{ pbs_backup_job_status.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.id }}"
+  when: pbs_storage.enabled | default(false)
