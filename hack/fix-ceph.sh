@@ -26,30 +26,6 @@ check_ssh() {
     return 0
 }
 
-fix_log_permissions() {
-    local node=$1
-    log_info "Checking /var/log/ceph permissions on $node..."
-    ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$node "
-        if [ -f /var/log/ceph ]; then
-            echo 'Found /var/log/ceph as a file. Backing up and replacing with directory...'
-            mv /var/log/ceph /var/log/ceph.bak.\$(date +%s)
-        fi
-        if [ ! -d /var/log/ceph ]; then
-            mkdir -p /var/log/ceph
-        fi
-        chown ceph:ceph /var/log/ceph
-        chmod 750 /var/log/ceph
-    "
-}
-
-restart_services() {
-    local node=$1
-    log_info "Restarting Ceph services on $node..."
-    ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$node "
-        systemctl restart ceph-mon.target ceph-mgr.target ceph-mds.target ceph-osd.target
-    "
-}
-
 cleanup_backups() {
     local target_node=$1
     local target_id=""
@@ -390,7 +366,6 @@ check_fragmentation() {
 usage() {
     echo "Usage: $0 [options]"
     echo "Options:"
-    echo "  --maintenance          Run maintenance (fix logs, restart services) on ALL nodes."
     echo "  --recover <IP>         Recover a corrupted monitor on a specific node IP."
     echo "  --force-recover <IP>   Force recover without confirmation."
     echo "  --remove-mon <IP>      Remove a stale/backup monitor from the cluster."
@@ -411,16 +386,6 @@ if [[ $# -eq 0 ]]; then
 fi
 
 case "$1" in
-    --maintenance)
-        set_scrub_window
-        deep_scrub_all
-        for node in "${ALL_NODES[@]}"; do
-            if check_ssh $node; then
-                fix_log_permissions $node
-                restart_services $node
-            fi
-        done
-        ;;
     --recover)
         if [[ -z "$2" ]]; then
             log_err "Please specify the node IP to recover."

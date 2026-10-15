@@ -188,10 +188,10 @@
   roles:
   - keepalived
 
-# ------------------------- Schedule Ceph maintenance ------------------------- #
+# ------------------------- Retire legacy Ceph maintenance ------------------------- #
 - hosts: pve01
   become: True
-  tags: ceph_maintenance
+  tags: ceph_maintenance_remove
   roles:
   - proxmox_ceph_maintenance
 

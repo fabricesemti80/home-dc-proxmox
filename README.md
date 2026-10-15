@@ -253,9 +253,8 @@ task network-configure-secondary
 task ceph-remove-storage-plan
 task ceph-remove-storage-apply
 
-# Weekly Ceph maintenance schedule
-task ceph-maintenance-plan
-task ceph-maintenance-apply
+# Recover existing Ceph daemons and verify storage
+task ceph-recovery
 ```
 
 These commands use SSH key auth by default.
@@ -323,15 +322,23 @@ template_backup:
 
 Monitor backups via Proxmox web UI: **Datacenter → Backup**
 
-### Ceph Maintenance
+### Ceph Recovery
 
-The site play schedules weekly Ceph maintenance on every Proxmox node for Sunday at 7:00 AM. It installs `/usr/local/sbin/proxmox-ceph-maintenance`, which performs the same maintenance steps as `./hack/fix-ceph.sh --maintenance` locally on each node:
+Run `task ceph-recovery` to recover existing daemons and verify the complete cluster.
+It restores current monitor-issued credentials, corrects persisted OSD keys offline
+when needed, enables existing services, and waits for all daemons, clean PGs and
+Proxmox Ceph storage access. It does not recreate disks or reboot hosts.
 
-- Fix `/var/log/ceph` if it was accidentally created as a file
-- Ensure `/var/log/ceph` is owned by `ceph:ceph` with mode `750`
-- Restart `ceph-mon.target`, `ceph-mgr.target`, `ceph-mds.target`, and `ceph-osd.target`
+See [recovery design, validation and rollback](docs/ceph-recovery.md).
 
-Use `task ceph-maintenance-apply` to configure only this schedule.
+### Maintenance ownership
+
+Maintenance is orchestrated by the `homelab.ops` workflows in `home-kestra`.
+The old Sunday Ceph restart cron, its installed executable, the maintenance
+Taskfile commands and `fix-ceph.sh --maintenance` have been retired. The
+`proxmox_ceph_maintenance` role now only removes that cron and executable so a
+future `site.yml` run cannot reinstall them. Existing maintenance logs remain.
+Use `task ceph-recovery` for a daemon/storage recovery without a host outage.
 
 ### High Availability Access
 

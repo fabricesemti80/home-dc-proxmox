@@ -228,15 +228,10 @@ tasks:
     cmds:
       - task run-playbook -- create_vm.yml --check --diff {{.CLI_ARGS}} -e proxmox_vm_state=absent
 
-  ceph-maintenance-plan:
-    desc: Preview weekly Ceph maintenance schedule
+  ceph-recovery:
+    desc: Recover and verify all existing Ceph daemons and storage
     cmds:
-      - task run-site -- --tags ceph_maintenance --check --diff
-
-  ceph-maintenance-apply:
-    desc: Configure weekly Ceph maintenance schedule
-    cmds:
-      - task run-site -- --tags ceph_maintenance
+      - task run-playbook -- recover_ceph.yml {{.CLI_ARGS}}
 
   ceph-remove-storage-plan:
     desc: Preview CephFS storage removal
