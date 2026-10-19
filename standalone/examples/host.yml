@@ -1,0 +1,20 @@
+# Inert example: review hardware, storage and recovery access in private parent.
+proxmox_host:
+  deployment_enabled: false
+  mode: standalone
+  expected_pve_major: 9
+  expected_debian_major: 13
+  timezone: Etc/UTC
+  repository: preserve
+  packages: []
+  storage:
+    # local-lvm depends on the ISO installer storage choice; assertions only.
+    local_expected_ids: [local, local-lvm]
+    nfs: []
+  backups: []
+  gpu:
+    enabled: false
+    bootloader: null
+    pci_addresses: []
+    pci_ids: []
+    allow_host_console_loss: false

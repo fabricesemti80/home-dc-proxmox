@@ -8,3 +8,13 @@ files/root_pve_rsa
 # API tokens (contains sensitive API tokens)
 tokens/
 inventory.backup
+
+# Standalone controller/runtime artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env.*
+!*.example
+standalone/local/
+standalone/evidence/

@@ -1,0 +1,249 @@
+version: '3'
+
+vars:
+  DOPPLER_PROJECT: project-proxmoxhosts
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  list:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  setup:
+    desc: Install Ansible Galaxy requirements
+    cmds:
+      - doppler run --project {{.DOPPLER_PROJECT}} -- ansible-galaxy install -r roles/requirements.yml --force
+
+  init:
+    desc: Install Ansible Galaxy requirements
+    cmds:
+      - task: setup
+
+  run-site:
+    cmds:
+      - |
+        set -a
+        [[ ! -f .env ]] || . ./.env
+        set +a
+
+        doppler run --project {{.DOPPLER_PROJECT}} -- bash -lc '
+          set -euo pipefail
+          key_path="${ANSIBLE_SSH_PRIVATE_KEY_FILE:-$HOME/.ssh/fs_home_rsa}"
+
+          if [[ ! -f "$key_path" ]]; then
+            printf "Missing SSH private key: %s\n" "$key_path" >&2
+            echo "Set ANSIBLE_SSH_PRIVATE_KEY_FILE or place the key at ~/.ssh/fs_home_rsa." >&2
+            exit 1
+          fi
+
+          ansible-playbook -i inventory site.yml -e "{\"pve_reboot_on_kernel_update\": true}" "$@"
+        ' bash {{.CLI_ARGS}}
+
+  run-playbook:
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        if [[ $# -lt 1 ]]; then
+          echo "usage: task run-playbook -- <playbook> [ansible-playbook args...]" >&2
+          exit 1
+        fi
+
+        playbook="$1"
+        shift
+
+        set -a
+        [[ ! -f .env ]] || . ./.env
+        set +a
+
+        doppler run --project {{.DOPPLER_PROJECT}} -- bash -lc '
+          set -euo pipefail
+          key_path="${ANSIBLE_SSH_PRIVATE_KEY_FILE:-$HOME/.ssh/fs_home_rsa}"
+
+          if [[ ! -f "$key_path" ]]; then
+            printf "Missing SSH private key: %s\n" "$key_path" >&2
+            echo "Set ANSIBLE_SSH_PRIVATE_KEY_FILE or place the key at ~/.ssh/fs_home_rsa." >&2
+            exit 1
+          fi
+
+          playbook="$1"
+          shift
+          ansible-playbook -i inventory "$playbook" "$@"
+        ' bash "$playbook" "$@"
+
+  plan:
+    desc: Preview full deployment changes
+    cmds:
+      - task run-site -- --check --diff
+
+  check:
+    desc: Preview full deployment changes
+    cmds:
+      - task: plan
+
+  apply:
+    desc: Apply full deployment
+    cmds:
+      - task: run-site
+
+  apply-verbose:
+    desc: Apply full deployment with verbose output
+    cmds:
+      - task run-site -- -vv
+
+  apply-no-ssh:
+    desc: Apply full deployment while skipping ssh_cluster_config
+    cmds:
+      - task run-site -- --skip-tags ssh_cluster_config
+
+  apply-networking-targeted:
+    desc: Apply networking changes to pve-2 only
+    cmds:
+      - task run-site -- --tags networking --limit pve-2.fabricesemti.dev
+
+  role-plan:
+    desc: Preview a site.yml tag
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        if [[ $# -lt 1 ]]; then
+          echo "usage: task role-plan -- <ansible-tag> [extra ansible-playbook args...]" >&2
+          exit 1
+        fi
+
+        tag="$1"
+        shift
+        task run-site -- --check --diff --tags "$tag" "$@"
+
+  role-apply:
+    desc: Apply a site.yml tag
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        if [[ $# -lt 1 ]]; then
+          echo "usage: task role-apply -- <ansible-tag> [extra ansible-playbook args...]" >&2
+          exit 1
+        fi
+
+        tag="$1"
+        shift
+        task run-site -- --tags "$tag" "$@"
+
+  beszel-agent-plan:
+    desc: Preview Beszel agent changes
+    cmds:
+      - task run-site -- --tags beszel_agent --check --diff
+
+  beszel-agent-apply:
+    desc: Apply Beszel agent changes
+    cmds:
+      - task run-site -- --tags beszel_agent
+
+  beszel-agent-remove-plan:
+    desc: Preview Beszel agent removal
+    cmds:
+      - task run-site -- --tags beszel_agent -e '_beszel_state=absent' --check --diff
+
+  beszel-agent-remove-apply:
+    desc: Remove Beszel agent
+    cmds:
+      - task run-site -- --tags beszel_agent -e '_beszel_state=absent'
+
+  cluster-add-nodes:
+    desc: Add remaining Proxmox nodes
+    cmds:
+      - task run-playbook -- add_remaining_nodes.yml
+
+  cluster-configure-network:
+    desc: Configure cluster secondary network
+    cmds:
+      - task run-playbook -- configure_secondary_network.yml
+
+  smtp-configure:
+    desc: Configure Gmail SMTP
+    cmds:
+      - task run-site -- --tags gmail_smtp
+
+  smtp-test:
+    desc: Send Proxmox notification test email
+    cmds:
+      - |
+        task run-site -- --tags gmail_smtp -e '{"proxmox_notification_test": true}'
+
+  backup-configure:
+    desc: Configure Proxmox backups
+    cmds:
+      - task run-site -- --tags backup
+
+  api-tokens:
+    desc: Generate Proxmox API tokens
+    cmds:
+      - task run-site -- --tags api_tokens
+
+  api-pools:
+    desc: Configure Proxmox resource pools
+    cmds:
+      - task run-site -- --tags pools
+
+  api-pools-check:
+    desc: Preview Proxmox resource pool changes
+    cmds:
+      - task run-site -- --tags pools --check --diff
+
+  api-setup:
+    desc: Configure Proxmox API tokens and pools
+    cmds:
+      - task run-site -- --tags api_tokens,pools
+
+  vm-create:
+    desc: Create default Proxmox VM
+    cmds:
+      - task run-playbook -- create_vm.yml {{.CLI_ARGS}}
+
+  vm-plan:
+    desc: Preview default Proxmox VM changes
+    cmds:
+      - task run-playbook -- create_vm.yml --check --diff {{.CLI_ARGS}}
+
+  vm-destroy:
+    desc: Destroy default Proxmox VM
+    cmds:
+      - |
+        printf "Destroy Proxmox VM? Type destroy to continue: "
+        read -r confirm
+        if [[ "$confirm" != "destroy" ]]; then
+          echo "Aborted."
+          exit 1
+        fi
+        task run-playbook -- create_vm.yml {{.CLI_ARGS}} -e proxmox_vm_state=absent
+
+  vm-destroy-plan:
+    desc: Preview default Proxmox VM destruction
+    cmds:
+      - task run-playbook -- create_vm.yml --check --diff {{.CLI_ARGS}} -e proxmox_vm_state=absent
+
+  ceph-recovery:
+    desc: Recover and verify all existing Ceph daemons and storage
+    cmds:
+      - task run-playbook -- recover_ceph.yml {{.CLI_ARGS}}
+
+  ceph-remove-storage-plan:
+    desc: Preview CephFS storage removal
+    cmds:
+      - task run-playbook -- remove_cephfs_storage.yml --check --diff
+
+  ceph-remove-storage-apply:
+    desc: Remove CephFS storage
+    cmds:
+      - task run-playbook -- remove_cephfs_storage.yml
+
+  network-configure-secondary:
+    desc: Configure secondary network
+    cmds:
+      - task run-playbook -- configure_secondary_network.yml
