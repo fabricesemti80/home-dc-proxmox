@@ -1,0 +1,6 @@
+all:
+  children:
+    standalone_proxmox:
+      hosts:
+        pve-app:
+          ansible_host: 192.0.2.10
