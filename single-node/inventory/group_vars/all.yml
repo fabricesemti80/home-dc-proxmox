@@ -1,0 +1,22 @@
+---
+# Debian 13 (trixie) -> Proxmox VE 9, standalone host.
+pve_hostname: pve
+pve_domain: home.arpa
+pve_management_address: 10.0.40.10/24
+pve_management_gateway: 10.0.40.1
+pve_management_interface: '' # set after task inspect; never guessed
+pve_network_apply: false
+pve_storage_apply: false
+pve_mirror_name: tank-vm
+# Only set after task inspect. Stable by-id paths, not /dev/nvme0n1.
+pve_mirror_devices: []
+# Optional NFS storage; set to true and update export paths after verification.
+pve_nfs_enabled: false
+pve_nfs_server: 10.0.40.2
+pve_nfs_storages:
+  - { name: nas-backups, export: /proxmox-backup, content: backup }
+  - { name: nas-iso, export: /proxmox-iso, content: iso,vztmpl }
+pve_backup_enabled: false
+pve_backup_storage: nas-backups
+pve_backup_schedule: '02:30'
+pve_backup_retention: 'keep-last=7,keep-weekly=4,keep-monthly=3'
