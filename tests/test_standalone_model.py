@@ -61,6 +61,22 @@ class ModelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_inventory(self.inventory, 'pve-app')
 
+    def test_inferred_inventory_rejects_patterns_and_ambiguous_targets(self):
+        hosts = self.inventory['all']['children']['standalone_proxmox']['hosts']
+        node = hosts.pop('pve-app')
+        for alias in ('all', '*', 'pve-*', 'pve:other'):
+            with self.subTest(alias=alias):
+                hosts.clear()
+                hosts[alias] = node
+                with self.assertRaises(ValueError):
+                    validate_inventory(self.inventory)
+        hosts.clear()
+        with self.assertRaises(ValueError):
+            validate_inventory(self.inventory)
+        hosts.update({'one': node, 'two': node})
+        with self.assertRaises(ValueError):
+            validate_inventory(self.inventory)
+
     def test_iommu_arguments_preserved_and_deduplicated(self):
         got = iommu_tokens('root=UUID=abc quiet intel_iommu=on iommu=pt quiet', 'GenuineIntel')
         self.assertEqual(got, 'root=UUID=abc quiet intel_iommu=on iommu=pt')

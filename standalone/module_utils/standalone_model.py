@@ -108,15 +108,18 @@ def validate_config(data):
     return c
 
 
-def validate_inventory(data, alias):
-    identifier(alias)
-    require(alias not in ('all', 'ungrouped', 'standalone_proxmox'), 'reserved inventory alias')
+def validate_inventory(data, alias=None):
     keys(data, ['all'])
     keys(data['all'], ['children'])
     keys(data['all']['children'], ['standalone_proxmox'])
     group = data['all']['children']['standalone_proxmox']
     keys(group, ['hosts'])
-    require(type(group['hosts']) is dict and list(group['hosts']) == [alias], 'exactly one concrete standalone_proxmox alias equal to --host required')
+    require(type(group['hosts']) is dict and len(group['hosts']) == 1, 'exactly one concrete standalone_proxmox host required')
+    if alias is None or alias == '':
+        alias = next(iter(group['hosts']))
+    identifier(alias)
+    require(alias not in ('all', 'ungrouped', 'standalone_proxmox'), 'reserved inventory alias')
+    require(list(group['hosts']) == [alias], 'inventory alias must equal --host')
     host = group['hosts'][alias]
     keys(host, ['ansible_host', 'ansible_port'], ['ansible_host'])
     text(host['ansible_host'], r'[A-Za-z0-9][A-Za-z0-9.:-]*')
