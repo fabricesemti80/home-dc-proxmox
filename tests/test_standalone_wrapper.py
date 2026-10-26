@@ -87,6 +87,29 @@ sys.exit(int(os.environ.get('FAKE_EXIT', '0')))
         self.assertNotEqual(self.run_action('apply').returncode, 0)
         self.assertEqual(self.records(), [])
 
+    def test_infers_only_one_literal_host_before_planning(self):
+        self.inventory.write_text(self.inventory.read_text().replace('pve-app:', 'pve-00:'))
+        cmd = ['bash', str(ROOT / 'scripts/standalone-host.sh'), 'plan',
+               '--inventory', str(self.inventory), '--config', str(self.config)]
+        result = subprocess.run(cmd, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = self.records()[0]['argv']
+        self.assertEqual(args[args.index('--limit') + 1], 'pve-00')
+        self.assertIn('--check', args)
+        self.assertIn('--diff', args)
+        self.capture.unlink()
+        import yaml
+        data = yaml.safe_load(self.inventory.read_text())
+        data['all']['children']['standalone_proxmox']['hosts']['other'] = {'ansible_host': '192.0.2.11'}
+        self.inventory.write_text(yaml.safe_dump(data))
+        self.assertNotEqual(subprocess.run(cmd, env=self.env, capture_output=True).returncode, 0)
+        self.assertEqual(self.records(), [])
+
+    def test_missing_selected_controller_does_not_fall_back(self):
+        self.env['PROXMOX_PYTHON'] = str(self.directory / 'missing-python')
+        self.assertNotEqual(self.run_action('apply').returncode, 0)
+        self.assertEqual(self.records(), [])
+
 
 
 if __name__ == '__main__':

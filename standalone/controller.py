@@ -39,8 +39,9 @@ def main():
         raise ValueError('controller Python 3.12–3.14 is required by pinned ansible-core 2.21')
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('action', choices=ACTIONS)
-    for flag in ('inventory', 'config', 'host'):
+    for flag in ('inventory', 'config'):
         parser.add_argument('--' + flag, required=True)
+    parser.add_argument('--host')
     for flag in ('inventory', 'config', 'host'):
         if sum(x == '--' + flag or x.startswith('--' + flag + '=') for x in sys.argv[1:]) > 1:
             raise ValueError('duplicate --' + flag)
@@ -54,6 +55,7 @@ def main():
     config = load_yaml(paths[1])
     c = validate_config(config)
     inventory = validate_inventory(load_yaml(paths[0]), args.host)
+    args.host = next(iter(inventory['all']['children']['standalone_proxmox']['hosts']))
     if args.action != 'validate' and not c['deployment_enabled']:
         raise ValueError('deployment_enabled must be true for any SSH action')
     executable = shutil.which('ansible-playbook')
