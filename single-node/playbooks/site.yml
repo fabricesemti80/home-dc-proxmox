@@ -1,0 +1,156 @@
+---
+- name: Provision standalone Proxmox VE 9 from Debian 13
+  hosts: proxmox
+  become: true
+  gather_facts: true
+  handlers:
+    - name: Refresh networking
+      ansible.builtin.command: ifreload -a
+  tasks:
+    - name: Require Debian 13
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+        fail_msg: 'This playbook only supports Debian 13 (trixie).'
+      tags: [always]
+    - name: Install baseline packages
+      ansible.builtin.apt:
+        name: [curl, gnupg, ca-certificates, sudo, chrony, smartmontools, nvme-cli, nfs-common, zfsutils-linux]
+        state: present
+        update_cache: true
+      tags: [bootstrap]
+    - name: Set timezone
+      community.general.timezone:
+        name: Europe/London
+      tags: [bootstrap]
+    - name: Ensure chrony enabled
+      ansible.builtin.service:
+        name: chrony
+        enabled: true
+        state: started
+      tags: [bootstrap]
+    - name: Check Proxmox repository key
+      ansible.builtin.get_url:
+        url: https://enterprise.proxmox.com/debian/proxmox-archive-keyring-trixie.gpg
+        dest: /usr/share/keyrings/proxmox-archive-keyring.gpg
+        mode: '0644'
+      tags: [bootstrap]
+    - name: Configure Proxmox no-subscription repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/pve-no-subscription.sources
+        mode: '0644'
+        content: |
+          Types: deb
+          URIs: http://download.proxmox.com/debian/pve
+          Suites: trixie
+          Components: pve-no-subscription
+          Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+      tags: [bootstrap]
+    - name: Install Proxmox kernel
+      ansible.builtin.apt:
+        name: proxmox-default-kernel
+        state: present
+        update_cache: true
+      tags: [bootstrap]
+    - name: Check running kernel
+      ansible.builtin.command: uname -r
+      register: kernel_running
+      changed_when: false
+      tags: [bootstrap]
+    - name: Require reboot into Proxmox kernel before continuing
+      ansible.builtin.assert:
+        that: "'pve' in kernel_running.stdout"
+        fail_msg: 'Reboot into the newly installed Proxmox kernel, then rerun task apply.'
+      tags: [bootstrap]
+    - name: Install Proxmox VE packages
+      ansible.builtin.apt:
+        name: [proxmox-ve, postfix, open-iscsi, ifupdown2]
+        state: present
+        update_cache: true
+      tags: [bootstrap]
+    - name: Check network opt-in
+      ansible.builtin.assert:
+        that:
+          - pve_management_interface | length > 0
+          - pve_management_address | length > 0
+          - pve_management_gateway | length > 0
+        fail_msg: 'Configure interface/address/gateway in inventory first.'
+      when: pve_network_apply | bool
+      tags: [network]
+    - name: Install management bridge configuration (explicit opt-in)
+      ansible.builtin.copy:
+        dest: /etc/network/interfaces.d/vmbr0
+        mode: '0644'
+        content: |
+          auto {{ pve_management_interface }}
+          iface {{ pve_management_interface }} inet manual
+
+          auto vmbr0
+          iface vmbr0 inet static
+              address {{ pve_management_address }}
+              gateway {{ pve_management_gateway }}
+              bridge-ports {{ pve_management_interface }}
+              bridge-stp off
+              bridge-fd 0
+      when: pve_network_apply | bool
+      notify: Refresh networking
+      tags: [network]
+    - name: Ensure interfaces.d is included
+      ansible.builtin.lineinfile:
+        path: /etc/network/interfaces
+        line: 'source /etc/network/interfaces.d/*'
+        state: present
+      when: pve_network_apply | bool
+      tags: [network]
+    - name: Validate mirror device count
+      ansible.builtin.assert:
+        that: pve_mirror_devices | length == 2
+        fail_msg: 'Provide exactly two verified /dev/disk/by-id paths.'
+      when: pve_storage_apply | bool
+      tags: [storage]
+    - name: Validate mirror device identifiers
+      ansible.builtin.assert:
+        that:
+          - item is match('^/dev/disk/by-id/')
+        fail_msg: 'Use stable /dev/disk/by-id paths only.'
+      loop: '{{ pve_mirror_devices }}'
+      when: pve_storage_apply | bool
+      tags: [storage]
+    - name: Detect existing mirror
+      ansible.builtin.command: zpool list -H -o name {{ pve_mirror_name }}
+      register: mirror_exists
+      changed_when: false
+      failed_when: false
+      tags: [storage]
+    - name: Require explicit confirmation for destructive pool creation
+      ansible.builtin.assert:
+        that:
+          - pve_storage_confirm | default('') == 'ERASE-NEW-MIRROR-DRIVES'
+        fail_msg: 'Creating a pool erases the selected drives. Supply -e pve_storage_confirm=ERASE-NEW-MIRROR-DRIVES after inspection.'
+      when: pve_storage_apply | bool and mirror_exists.rc != 0
+      tags: [storage]
+    - name: Create mirrored ZFS pool
+      ansible.builtin.command:
+        argv: "{{ ['zpool','create','-o','ashift=12','-O','compression=lz4','-O','atime=off',pve_mirror_name,'mirror'] + pve_mirror_devices }}"
+      when: pve_storage_apply | bool and mirror_exists.rc != 0 and not ansible_check_mode
+      tags: [storage]
+    - name: Register mirrored storage with Proxmox
+      ansible.builtin.command: "pvesm add zfspool {{ pve_mirror_name }} --pool {{ pve_mirror_name }} --content images,rootdir --sparse 1"
+      register: pvesm_zfs
+      failed_when: pvesm_zfs.rc != 0 and 'already defined' not in (pvesm_zfs.stderr | default(''))
+      changed_when: pvesm_zfs.rc == 0
+      when: pve_storage_apply | bool and not ansible_check_mode
+      tags: [storage]
+    - name: Configure optional NFS storage
+      ansible.builtin.command: "pvesm add nfs {{ item.name }} --server {{ pve_nfs_server }} --export {{ item.export }} --content {{ item.content }}"
+      loop: '{{ pve_nfs_storages }}'
+      register: pvesm_nfs
+      failed_when: pvesm_nfs.rc != 0 and 'already defined' not in (pvesm_nfs.stderr | default(''))
+      changed_when: pvesm_nfs.rc == 0
+      when: pve_nfs_enabled | bool and not ansible_check_mode
+      tags: [nfs]
+    - name: Configure optional backup job
+      ansible.builtin.command: "pvesh create /cluster/backup --storage {{ pve_backup_storage }} --schedule {{ pve_backup_schedule }} --mode snapshot --all 1 --prune-backups {{ pve_backup_retention }}"
+      when: pve_backup_enabled | bool and not ansible_check_mode
+      tags: [backup]
