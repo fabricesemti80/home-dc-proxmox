@@ -1,0 +1,22 @@
+---
+- name: Verify Proxmox installation
+  hosts: proxmox
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check installed Proxmox version
+      ansible.builtin.command: pveversion
+      changed_when: false
+    - name: Check Proxmox API service
+      ansible.builtin.service_facts:
+    - name: Assert Proxmox API service is active
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['pveproxy.service'].state == 'running'
+    - name: Show storage
+      ansible.builtin.command: pvesm status
+      changed_when: false
+    - name: Show ZFS pools
+      ansible.builtin.command: zpool status
+      changed_when: false
+      failed_when: false
