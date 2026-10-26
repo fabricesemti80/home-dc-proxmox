@@ -16,7 +16,7 @@
       tags: [always]
     - name: Install baseline packages
       ansible.builtin.apt:
-        name: [curl, gnupg, ca-certificates, sudo, chrony, smartmontools, nvme-cli, nfs-common, zfsutils-linux]
+        name: [curl, gnupg, ca-certificates, sudo, chrony, smartmontools, nvme-cli, nfs-common]
         state: present
         update_cache: true
       tags: [bootstrap]
@@ -47,6 +47,10 @@
           Components: pve-no-subscription
           Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
       tags: [bootstrap]
+    - name: Ensure hostname resolves to management IP
+      ansible.builtin.command: hostname -f
+      changed_when: false
+      tags: [bootstrap]
     - name: Install Proxmox kernel
       ansible.builtin.apt:
         name: proxmox-default-kernel
@@ -65,7 +69,7 @@
       tags: [bootstrap]
     - name: Install Proxmox VE packages
       ansible.builtin.apt:
-        name: [proxmox-ve, postfix, open-iscsi, ifupdown2]
+        name: [proxmox-ve, postfix, open-iscsi, ifupdown2, zfsutils-linux]
         state: present
         update_cache: true
       tags: [bootstrap]
@@ -150,7 +154,8 @@
       changed_when: pvesm_nfs.rc == 0
       when: pve_nfs_enabled | bool and not ansible_check_mode
       tags: [nfs]
-    - name: Configure optional backup job
-      ansible.builtin.command: "pvesh create /cluster/backup --storage {{ pve_backup_storage }} --schedule {{ pve_backup_schedule }} --mode snapshot --all 1 --prune-backups {{ pve_backup_retention }}"
-      when: pve_backup_enabled | bool and not ansible_check_mode
+    - name: Guard backup configuration until idempotent job management is implemented
+      ansible.builtin.assert:
+        that: not (pve_backup_enabled | bool)
+        fail_msg: 'Backup scheduling is not yet implemented safely. Configure a verified job through the Proxmox UI.'
       tags: [backup]
