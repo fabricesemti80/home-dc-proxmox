@@ -1,0 +1,59 @@
+---
+- name: Opt-in ZFS mirror creation for additional blank drives
+  hosts: debian_bootstrap
+  become: true
+  gather_facts: false
+  vars:
+    mirror_name: tank-vm
+    mirror_disks: []
+    mirror_confirm: ''
+  tasks:
+    - name: Validate explicit device selection and acknowledgement
+      ansible.builtin.assert:
+        that:
+          - mirror_disks | length == 2
+          - mirror_disks[0] != mirror_disks[1]
+          - mirror_disks[0] is match('^/dev/disk/by-id/')
+          - mirror_disks[1] is match('^/dev/disk/by-id/')
+          - mirror_confirm == 'ERASE-TWO-SELECTED-DISKS'
+        fail_msg: Supply exactly two distinct stable disk paths and explicit erase confirmation.
+    - name: Check existing pool
+      ansible.builtin.command: "zpool list -H -o name {{ mirror_name }}"
+      register: existing_pool
+      failed_when: false
+      changed_when: false
+    - name: Reject missing selected devices
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ mirror_disks }}"
+      register: disk_stats
+      when: existing_pool.rc != 0
+    - name: Require both disks present
+      ansible.builtin.assert:
+        that: disk_stats.results | map(attribute='stat.exists') | min
+      when: existing_pool.rc != 0
+    - name: Reject disks with existing signatures
+      ansible.builtin.command:
+        argv: [wipefs, --no-act, "{{ item }}"]
+      loop: "{{ mirror_disks }}"
+      register: disk_signatures
+      changed_when: false
+      when: existing_pool.rc != 0
+    - name: Require no filesystem signatures on selected drives
+      ansible.builtin.assert:
+        that: disk_signatures.results | map(attribute='stdout') | join('') | trim == ''
+        fail_msg: Refusing disks with existing signatures. Inspect and clear manually at console if appropriate.
+      when: existing_pool.rc != 0
+    - name: Create mirror (no force)
+      ansible.builtin.command:
+        argv: "{{ ['zpool', 'create', '-o', 'ashift=12', '-O', 'compression=lz4', '-O', 'atime=off', mirror_name, 'mirror'] + mirror_disks }}"
+      when: existing_pool.rc != 0 and not ansible_check_mode
+    - name: Query existing Proxmox storage
+      ansible.builtin.command: "pvesm status --storage {{ mirror_name }}"
+      register: storage_status
+      changed_when: false
+      failed_when: false
+    - name: Register mirror with Proxmox
+      ansible.builtin.command:
+        argv: [pvesm, add, zfspool, "{{ mirror_name }}", --pool, "{{ mirror_name }}", --content, images,rootdir, --sparse, '1']
+      when: storage_status.rc != 0 and not ansible_check_mode
