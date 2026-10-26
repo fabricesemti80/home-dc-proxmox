@@ -1,0 +1,38 @@
+version: '3'
+dotenv: ['.env']
+vars:
+  INVENTORY: inventory/hosts.yml
+  PLAYBOOK: playbooks/site.yml
+tasks:
+  default:
+    cmds: [task --list]
+  init:
+    cmds:
+      - ansible-galaxy collection install -r requirements.yml
+  ping:
+    cmds:
+      - ansible -i {{.INVENTORY}} proxmox -m ansible.builtin.ping
+  inspect:
+    cmds:
+      - ansible-playbook -i {{.INVENTORY}} playbooks/inspect.yml
+  plan:
+    cmds:
+      - ansible-playbook -i {{.INVENTORY}} {{.PLAYBOOK}} --check --diff
+  apply:
+    cmds:
+      - ansible-playbook -i {{.INVENTORY}} {{.PLAYBOOK}}
+  verify:
+    cmds:
+      - ansible-playbook -i {{.INVENTORY}} playbooks/verify.yml
+  network-plan:
+    cmds:
+      - ansible-playbook -i {{.INVENTORY}} {{.PLAYBOOK}} --tags network --check --diff
+  network-apply:
+    cmds:
+      - ansible-playbook -i {{.INVENTORY}} {{.PLAYBOOK}} --tags network -e pve_network_apply=true
+  storage-plan:
+    cmds:
+      - ansible-playbook -i {{.INVENTORY}} {{.PLAYBOOK}} --tags storage --check --diff
+  storage-apply:
+    cmds:
+      - ansible-playbook -i {{.INVENTORY}} {{.PLAYBOOK}} --tags storage -e pve_storage_apply=true
