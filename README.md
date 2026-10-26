@@ -2,6 +2,8 @@
 
 Configure a previously installed official-ISO PVE 9 / Debian 13 host through a single validated entry point. The private parent owns inventory and reviewed configuration; this public component has inert examples only.
 
+For a fresh Dell Precision 7820, start with the [standalone installation guide](docs/standalone-installation.md). It covers BIOS settings, replacing Windows on the Samsung NVMe with a single-disk ZFS installation, preserving the 4 TB HDD, and planning a later bootable NVMe mirror.
+
 Read the [design and operator runbook](docs/standalone-host.md), [action reference](standalone/README.md) and [example inputs](standalone/examples). Install controller dependencies externally in an isolated environment using standalone/requirements.txt, then:
 
 ```sh
