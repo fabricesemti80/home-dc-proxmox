@@ -1,4 +1,5 @@
 version: '3'
+dotenv: ['.env']
 
 tasks:
   default:
@@ -130,3 +131,32 @@ tasks:
     desc: Safe alias for standalone:plan
     cmds:
       - task: standalone:plan
+
+  bootstrap:ping:
+    desc: Test SSH to fresh Debian host
+    requires:
+      vars: [BOOTSTRAP_INVENTORY]
+    cmds:
+      - ansible -i "{{.BOOTSTRAP_INVENTORY}}" debian_bootstrap -m ansible.builtin.ping
+
+  bootstrap:inspect:
+    desc: Read-only disks, mounts and interfaces
+    requires:
+      vars: [BOOTSTRAP_INVENTORY]
+    cmds:
+      - ansible -i "{{.BOOTSTRAP_INVENTORY}}" debian_bootstrap -b -m ansible.builtin.command -a "lsblk -f"
+      - ansible -i "{{.BOOTSTRAP_INVENTORY}}" debian_bootstrap -b -m ansible.builtin.command -a "ip -brief address"
+
+  bootstrap:plan:
+    desc: Preview Debian 13 to Proxmox VE 9 bootstrap
+    requires:
+      vars: [BOOTSTRAP_INVENTORY]
+    cmds:
+      - ansible-playbook -i "{{.BOOTSTRAP_INVENTORY}}" bootstrap/proxmox.yml --check --diff {{.CLI_ARGS}}
+
+  bootstrap:apply:
+    desc: Install Proxmox VE 9 in staged runs with explicit reboot
+    requires:
+      vars: [BOOTSTRAP_INVENTORY]
+    cmds:
+      - ansible-playbook -i "{{.BOOTSTRAP_INVENTORY}}" bootstrap/proxmox.yml {{.CLI_ARGS}}
