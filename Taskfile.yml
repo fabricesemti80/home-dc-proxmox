@@ -1,5 +1,4 @@
 version: '3'
-dotenv: ['.env']
 
 tasks:
   default:
@@ -16,7 +15,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" validate --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" validate --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   standalone:discover:
     desc: Standalone discover with explicit INVENTORY CONFIG HOST
@@ -27,7 +26,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" discover --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" discover --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   standalone:plan:
     desc: Standalone plan with explicit INVENTORY CONFIG HOST
@@ -38,7 +37,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" plan --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" plan --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   standalone:apply:
     desc: Standalone apply with explicit INVENTORY CONFIG HOST
@@ -49,7 +48,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" apply --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" apply --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   standalone:verify:
     desc: Standalone verify with explicit INVENTORY CONFIG HOST
@@ -60,7 +59,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" verify --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" verify --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   standalone:gpu-discover:
     desc: Standalone gpu-discover with explicit INVENTORY CONFIG HOST
@@ -71,7 +70,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" gpu-discover --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" gpu-discover --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   standalone:gpu-plan:
     desc: Standalone gpu-plan with explicit INVENTORY CONFIG HOST
@@ -82,7 +81,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" gpu-plan --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" gpu-plan --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   standalone:gpu-prepare:
     desc: Standalone gpu-prepare with explicit INVENTORY CONFIG HOST
@@ -93,7 +92,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" gpu-prepare --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" gpu-prepare --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   standalone:gpu-verify:
     desc: Standalone gpu-verify with explicit INVENTORY CONFIG HOST
@@ -104,7 +103,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" gpu-verify --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" gpu-verify --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   standalone:reboot:
     desc: Standalone reboot with explicit INVENTORY CONFIG HOST
@@ -115,7 +114,7 @@ tasks:
       STANDALONE_CONFIG: '{{.CONFIG}}'
       STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" reboot --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" reboot --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   plan:
     desc: Safe alias for standalone:plan
@@ -131,32 +130,3 @@ tasks:
     desc: Safe alias for standalone:plan
     cmds:
       - task: standalone:plan
-
-  bootstrap:ping:
-    desc: Test SSH to fresh Debian host
-    requires:
-      vars: [BOOTSTRAP_INVENTORY]
-    cmds:
-      - ansible -i "{{.BOOTSTRAP_INVENTORY}}" debian_bootstrap -m ansible.builtin.ping
-
-  bootstrap:inspect:
-    desc: Read-only disks, mounts and interfaces
-    requires:
-      vars: [BOOTSTRAP_INVENTORY]
-    cmds:
-      - ansible -i "{{.BOOTSTRAP_INVENTORY}}" debian_bootstrap -b -m ansible.builtin.command -a "lsblk -f"
-      - ansible -i "{{.BOOTSTRAP_INVENTORY}}" debian_bootstrap -b -m ansible.builtin.command -a "ip -brief address"
-
-  bootstrap:plan:
-    desc: Preview Debian 13 to Proxmox VE 9 bootstrap
-    requires:
-      vars: [BOOTSTRAP_INVENTORY]
-    cmds:
-      - ansible-playbook -i "{{.BOOTSTRAP_INVENTORY}}" bootstrap/proxmox.yml --check --diff {{.CLI_ARGS}}
-
-  bootstrap:apply:
-    desc: Install Proxmox VE 9 in staged runs with explicit reboot
-    requires:
-      vars: [BOOTSTRAP_INVENTORY]
-    cmds:
-      - ansible-playbook -i "{{.BOOTSTRAP_INVENTORY}}" bootstrap/proxmox.yml {{.CLI_ARGS}}
