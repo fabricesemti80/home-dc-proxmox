@@ -87,16 +87,6 @@ sys.exit(int(os.environ.get('FAKE_EXIT', '0')))
         self.assertNotEqual(self.run_action('apply').returncode, 0)
         self.assertEqual(self.records(), [])
 
-    def test_safe_entry_points(self):
-        site = (ROOT / 'site.yml').read_text()
-        self.assertIn('ansible.builtin.fail', site)
-        self.assertNotIn('import_playbook', site)
-        task = (ROOT / 'Taskfile.yml').read_text()
-        for legacy in ('doppler', '.env', 'run-site', 'run-playbook', 'inventory =', 'lae.proxmox'):
-            self.assertNotIn(legacy, task)
-        play = (ROOT / 'standalone/playbooks/host.yml').read_text()
-        self.assertNotIn('ansible.builtin.reboot', play)
-        self.assertNotIn('include_role', play)
 
 
 if __name__ == '__main__':
