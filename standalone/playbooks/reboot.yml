@@ -1,0 +1,28 @@
+---
+- name: Explicit reviewed standalone reboot
+  hosts: standalone_proxmox
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Require explicit reboot invocation
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - standalone_action == 'reboot'
+          - proxmox_host.deployment_enabled | bool
+    - name: Read-only preflight before reboot
+      standalone_host:
+        action: discover
+        config: '{{ proxmox_host }}'
+    - name: Reboot only for this explicit action and reconnect
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+    - name: Verify baseline after reboot
+      standalone_host:
+        action: verify
+        config: '{{ proxmox_host }}'
+    - name: Verify GPU after reboot when configured
+      standalone_host:
+        action: gpu-post-reboot
+        config: '{{ proxmox_host }}'
+      when: proxmox_host.gpu.enabled

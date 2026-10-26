@@ -1,0 +1,20 @@
+---
+- name: Explicit standalone PVE host
+  hosts: standalone_proxmox
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Require exactly one host and dedicated action
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - standalone_action in ['discover', 'plan', 'apply', 'verify', 'gpu-discover', 'gpu-plan', 'gpu-prepare', 'gpu-verify']
+          - proxmox_host.deployment_enabled | bool
+    - name: Run standalone operation
+      standalone_host:
+        action: '{{ standalone_action }}'
+        config: '{{ proxmox_host }}'
+      register: standalone_result
+    - name: Report discoveries and pending activation
+      ansible.builtin.debug:
+        var: standalone_result.report

@@ -1,249 +1,162 @@
 version: '3'
-
-vars:
-  DOPPLER_PROJECT: project-proxmoxhosts
+dotenv: ['.env']
 
 tasks:
   default:
-    desc: List available tasks
-    cmds:
-      - task --list
+    desc: List safe standalone commands
+    cmds: [task --list]
     silent: true
 
-  list:
-    desc: List available tasks
+  standalone:validate:
+    desc: Standalone validate with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - task --list
-    silent: true
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" validate --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
-  setup:
-    desc: Install Ansible Galaxy requirements
+  standalone:discover:
+    desc: Standalone discover with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - doppler run --project {{.DOPPLER_PROJECT}} -- ansible-galaxy install -r roles/requirements.yml --force
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" discover --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
-  init:
-    desc: Install Ansible Galaxy requirements
+  standalone:plan:
+    desc: Standalone plan with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - task: setup
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" plan --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
-  run-site:
+  standalone:apply:
+    desc: Standalone apply with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - |
-        set -a
-        [[ ! -f .env ]] || . ./.env
-        set +a
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" apply --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
-        doppler run --project {{.DOPPLER_PROJECT}} -- bash -lc '
-          set -euo pipefail
-          key_path="${ANSIBLE_SSH_PRIVATE_KEY_FILE:-$HOME/.ssh/fs_home_rsa}"
-
-          if [[ ! -f "$key_path" ]]; then
-            printf "Missing SSH private key: %s\n" "$key_path" >&2
-            echo "Set ANSIBLE_SSH_PRIVATE_KEY_FILE or place the key at ~/.ssh/fs_home_rsa." >&2
-            exit 1
-          fi
-
-          ansible-playbook -i inventory site.yml -e "{\"pve_reboot_on_kernel_update\": true}" "$@"
-        ' bash {{.CLI_ARGS}}
-
-  run-playbook:
+  standalone:verify:
+    desc: Standalone verify with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
     cmds:
-      - |
-        set -- {{.CLI_ARGS}}
-        if [[ $# -lt 1 ]]; then
-          echo "usage: task run-playbook -- <playbook> [ansible-playbook args...]" >&2
-          exit 1
-        fi
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" verify --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
-        playbook="$1"
-        shift
+  standalone:gpu-discover:
+    desc: Standalone gpu-discover with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
+    cmds:
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" gpu-discover --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
-        set -a
-        [[ ! -f .env ]] || . ./.env
-        set +a
+  standalone:gpu-plan:
+    desc: Standalone gpu-plan with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
+    cmds:
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" gpu-plan --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
-        doppler run --project {{.DOPPLER_PROJECT}} -- bash -lc '
-          set -euo pipefail
-          key_path="${ANSIBLE_SSH_PRIVATE_KEY_FILE:-$HOME/.ssh/fs_home_rsa}"
+  standalone:gpu-prepare:
+    desc: Standalone gpu-prepare with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
+    cmds:
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" gpu-prepare --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
-          if [[ ! -f "$key_path" ]]; then
-            printf "Missing SSH private key: %s\n" "$key_path" >&2
-            echo "Set ANSIBLE_SSH_PRIVATE_KEY_FILE or place the key at ~/.ssh/fs_home_rsa." >&2
-            exit 1
-          fi
+  standalone:gpu-verify:
+    desc: Standalone gpu-verify with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
+    cmds:
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" gpu-verify --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
-          playbook="$1"
-          shift
-          ansible-playbook -i inventory "$playbook" "$@"
-        ' bash "$playbook" "$@"
+  standalone:reboot:
+    desc: Standalone reboot with explicit INVENTORY CONFIG HOST
+    requires:
+      vars: [INVENTORY, CONFIG, HOST]
+    env:
+      STANDALONE_INVENTORY: '{{.INVENTORY}}'
+      STANDALONE_CONFIG: '{{.CONFIG}}'
+      STANDALONE_HOST: '{{.HOST}}'
+    cmds:
+      - bash "{{.ROOT_DIR}}/scripts/standalone-host.sh" reboot --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
 
   plan:
-    desc: Preview full deployment changes
+    desc: Safe alias for standalone:plan
     cmds:
-      - task run-site -- --check --diff
-
-  check:
-    desc: Preview full deployment changes
-    cmds:
-      - task: plan
+      - task: standalone:plan
 
   apply:
-    desc: Apply full deployment
+    desc: Safe alias for standalone:apply
     cmds:
-      - task: run-site
+      - task: standalone:apply
 
-  apply-verbose:
-    desc: Apply full deployment with verbose output
+  check:
+    desc: Safe alias for standalone:plan
     cmds:
-      - task run-site -- -vv
+      - task: standalone:plan
 
-  apply-no-ssh:
-    desc: Apply full deployment while skipping ssh_cluster_config
+  bootstrap:ping:
+    desc: Test SSH to fresh Debian host
+    requires:
+      vars: [BOOTSTRAP_INVENTORY]
     cmds:
-      - task run-site -- --skip-tags ssh_cluster_config
+      - ansible -i "{{.BOOTSTRAP_INVENTORY}}" debian_bootstrap -m ansible.builtin.ping
 
-  apply-networking-targeted:
-    desc: Apply networking changes to pve-2 only
+  bootstrap:inspect:
+    desc: Read-only disks, mounts and interfaces
+    requires:
+      vars: [BOOTSTRAP_INVENTORY]
     cmds:
-      - task run-site -- --tags networking --limit pve-2.fabricesemti.dev
+      - ansible -i "{{.BOOTSTRAP_INVENTORY}}" debian_bootstrap -b -m ansible.builtin.command -a "lsblk -f"
+      - ansible -i "{{.BOOTSTRAP_INVENTORY}}" debian_bootstrap -b -m ansible.builtin.command -a "ip -brief address"
 
-  role-plan:
-    desc: Preview a site.yml tag
+  bootstrap:plan:
+    desc: Preview Debian 13 to Proxmox VE 9 bootstrap
+    requires:
+      vars: [BOOTSTRAP_INVENTORY]
     cmds:
-      - |
-        set -- {{.CLI_ARGS}}
-        if [[ $# -lt 1 ]]; then
-          echo "usage: task role-plan -- <ansible-tag> [extra ansible-playbook args...]" >&2
-          exit 1
-        fi
+      - ansible-playbook -i "{{.BOOTSTRAP_INVENTORY}}" bootstrap/proxmox.yml --check --diff {{.CLI_ARGS}}
 
-        tag="$1"
-        shift
-        task run-site -- --check --diff --tags "$tag" "$@"
-
-  role-apply:
-    desc: Apply a site.yml tag
+  bootstrap:apply:
+    desc: Install Proxmox VE 9 in staged runs with explicit reboot
+    requires:
+      vars: [BOOTSTRAP_INVENTORY]
     cmds:
-      - |
-        set -- {{.CLI_ARGS}}
-        if [[ $# -lt 1 ]]; then
-          echo "usage: task role-apply -- <ansible-tag> [extra ansible-playbook args...]" >&2
-          exit 1
-        fi
-
-        tag="$1"
-        shift
-        task run-site -- --tags "$tag" "$@"
-
-  beszel-agent-plan:
-    desc: Preview Beszel agent changes
-    cmds:
-      - task run-site -- --tags beszel_agent --check --diff
-
-  beszel-agent-apply:
-    desc: Apply Beszel agent changes
-    cmds:
-      - task run-site -- --tags beszel_agent
-
-  beszel-agent-remove-plan:
-    desc: Preview Beszel agent removal
-    cmds:
-      - task run-site -- --tags beszel_agent -e '_beszel_state=absent' --check --diff
-
-  beszel-agent-remove-apply:
-    desc: Remove Beszel agent
-    cmds:
-      - task run-site -- --tags beszel_agent -e '_beszel_state=absent'
-
-  cluster-add-nodes:
-    desc: Add remaining Proxmox nodes
-    cmds:
-      - task run-playbook -- add_remaining_nodes.yml
-
-  cluster-configure-network:
-    desc: Configure cluster secondary network
-    cmds:
-      - task run-playbook -- configure_secondary_network.yml
-
-  smtp-configure:
-    desc: Configure Gmail SMTP
-    cmds:
-      - task run-site -- --tags gmail_smtp
-
-  smtp-test:
-    desc: Send Proxmox notification test email
-    cmds:
-      - |
-        task run-site -- --tags gmail_smtp -e '{"proxmox_notification_test": true}'
-
-  backup-configure:
-    desc: Configure Proxmox backups
-    cmds:
-      - task run-site -- --tags backup
-
-  api-tokens:
-    desc: Generate Proxmox API tokens
-    cmds:
-      - task run-site -- --tags api_tokens
-
-  api-pools:
-    desc: Configure Proxmox resource pools
-    cmds:
-      - task run-site -- --tags pools
-
-  api-pools-check:
-    desc: Preview Proxmox resource pool changes
-    cmds:
-      - task run-site -- --tags pools --check --diff
-
-  api-setup:
-    desc: Configure Proxmox API tokens and pools
-    cmds:
-      - task run-site -- --tags api_tokens,pools
-
-  vm-create:
-    desc: Create default Proxmox VM
-    cmds:
-      - task run-playbook -- create_vm.yml {{.CLI_ARGS}}
-
-  vm-plan:
-    desc: Preview default Proxmox VM changes
-    cmds:
-      - task run-playbook -- create_vm.yml --check --diff {{.CLI_ARGS}}
-
-  vm-destroy:
-    desc: Destroy default Proxmox VM
-    cmds:
-      - |
-        printf "Destroy Proxmox VM? Type destroy to continue: "
-        read -r confirm
-        if [[ "$confirm" != "destroy" ]]; then
-          echo "Aborted."
-          exit 1
-        fi
-        task run-playbook -- create_vm.yml {{.CLI_ARGS}} -e proxmox_vm_state=absent
-
-  vm-destroy-plan:
-    desc: Preview default Proxmox VM destruction
-    cmds:
-      - task run-playbook -- create_vm.yml --check --diff {{.CLI_ARGS}} -e proxmox_vm_state=absent
-
-  ceph-recovery:
-    desc: Recover and verify all existing Ceph daemons and storage
-    cmds:
-      - task run-playbook -- recover_ceph.yml {{.CLI_ARGS}}
-
-  ceph-remove-storage-plan:
-    desc: Preview CephFS storage removal
-    cmds:
-      - task run-playbook -- remove_cephfs_storage.yml --check --diff
-
-  ceph-remove-storage-apply:
-    desc: Remove CephFS storage
-    cmds:
-      - task run-playbook -- remove_cephfs_storage.yml
-
-  network-configure-secondary:
-    desc: Configure secondary network
-    cmds:
-      - task run-playbook -- configure_secondary_network.yml
+      - ansible-playbook -i "{{.BOOTSTRAP_INVENTORY}}" bootstrap/proxmox.yml {{.CLI_ARGS}}
