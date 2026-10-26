@@ -1,0 +1,21 @@
+---
+- name: Read-only hardware and network inspection
+  hosts: proxmox
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Show interfaces and routes
+      ansible.builtin.command: ip -brief address
+      changed_when: false
+    - name: Show default route
+      ansible.builtin.command: ip route show default
+      changed_when: false
+    - name: Show disks and stable IDs
+      ansible.builtin.command: lsblk -o NAME,SIZE,TYPE,FSTYPE,MODEL,MOUNTPOINTS
+      changed_when: false
+    - name: List disk identifiers
+      ansible.builtin.command: ls -l /dev/disk/by-id/
+      changed_when: false
+    - name: Check CPU virtualization
+      ansible.builtin.command: grep -m1 -E 'vmx|svm' /proc/cpuinfo
+      changed_when: false
