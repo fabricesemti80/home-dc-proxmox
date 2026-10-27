@@ -1,6 +1,6 @@
 # Standalone Proxmox VE host
 
-This repository manages **one** Proxmox VE 9 host, `pve-00`. No cluster, Ceph, Beszel agent, HA, or backup jobs are configured. The installer-provided `vmbr0`, `local`, and `local-zfs` are retained; the HGST HDD is the `slow` ZFS pool. The NAS at `10.0.40.2` supplies template and ISO exports only. No backup NFS share is mapped; PBS may be configured later.
+This repository manages **one** Proxmox VE 9 host, `pve-00`. No cluster, Ceph, Beszel agent, HA, or backup jobs are configured. The installer-provided `vmbr0` and default file storage `local` remain untouched. Proxmox ZFS storage IDs are `local-nvme` and `local-hdd`; the underlying pools remain `rpool/data` and `slow`. The NAS at `10.0.40.2` supplies template and ISO exports only. No backup NFS share is mapped; PBS may be configured later.
 
 ## Layout
 
@@ -10,8 +10,8 @@ flowchart LR
     lan[10.0.40.0/24 LAN] ---|nic0 / vmbr0| host
     nas[NAS · 10.0.40.2] -->|NFS template + ISO exports| host
     subgraph host[pve-00 · Proxmox VE 9]
-        zfs[NVMe · rpool / local-zfs]
-        hdd[4 TB HDD · slow ZFS pool]
+        zfs[NVMe · rpool/data → local-nvme]
+        hdd[HDD · slow → local-hdd]
         console[GT 710 · no GPU changes yet]
         gpu[P2000 · no passthrough yet]
     end
@@ -35,7 +35,7 @@ Once re-enabled, the passthrough role refuses to apply unless the GT 710 reports
 `site.yml` selects the single `pve` inventory host, checks its Debian version, and composes the roles in order:
 
 1. `roles/proxmox_updates/` — disable subscription-only sources, enable no-subscription PVE, upgrade packages. Repository URL and suite are in `defaults/main.yml`.
-2. `roles/proxmox_storage/` — verify the HDD identity, create/register the `slow` pool if absent. Disk WWN, expected serial and pool name are in `defaults/main.yml`.
+2. `roles/proxmox_storage/` — verify the HDD identity, create `slow` ZFS pool if absent, register descriptive Proxmox IDs `local-nvme` and `local-hdd`. Disk WWN, expected serial, pool and storage names are in `defaults/main.yml`. The default `local` ID is never changed.
 3. `roles/proxmox_nfs/` — register the NAS template and ISO exports with Proxmox content restrictions. Server, exports and content are in its defaults; no backup NFS export is mapped.
 4. `roles/proxmox_gpu_passthrough/` — retained for later, **commented out in `site.yml`**. PCI IDs are in its defaults; enabling it requires the GT 710 firmware display prerequisite above.
 
@@ -44,7 +44,7 @@ Each role owns its tasks and defaults. `site.yml` does not duplicate their imple
 ## What Ansible changes
 
 - Removes subscription-only PVE and unused Ceph APT sources; adds the official `pve-no-subscription` repository for Debian trixie; updates APT metadata and performs a distribution upgrade. No Ceph installation or Ceph storage configuration.
-- Retains existing `local-zfs` (`rpool/data`) on the NVMe and `slow` on the HGST HDD for VM/container disks. On a fresh host without `slow`, the storage role creates it by **erasing the entire matching HDD**. `local` on the NVMe remains available for ISOs/templates/backups.
+- Migrates the empty Proxmox ZFS storage IDs `local-zfs` → `local-nvme` and `slow` → `local-hdd`, retaining the ZFS pools `rpool/data` and `slow` and all underlying data. Refuses to rename a storage with VM/CT volumes or a conflicting new ID. On a fresh host without the `slow` pool, creates it by **erasing the entire matching HDD**. Default `local` on the NVMe remains unchanged.
 - Adds `nfs-proxmox-template` (`/proxmox-template`: `vztmpl,images`) and `nfs-proxmox-iso` (`/proxmox-iso`: `iso,import`) from `10.0.40.2`. VM templates use Proxmox `images` content, which also permits ordinary VM disks. Does not mount `/proxmox-backup` or configure PBS.
 - GPU role is retained but **not invoked**. No GPU passthrough or host console change is performed.
 - Never reboots automatically during `task apply`. The separate operator-run `task reboot` uses Ansible's reboot module and waits for Proxmox and SSH to return. No role installs a guest VM, backup jobs, agent, or cluster services.
@@ -56,12 +56,12 @@ Requires local Ansible and Task (`task`), working root SSH via the `pve-00` alia
 ```sh
 ansible-playbook -i inventory site.yml --syntax-check
 task plan       # check mode + diff; no host configuration applied
-# Review the plan; on a fresh host lacking slow, creation wipes the HDD:
+# Review the plan; on a fresh host lacking the slow ZFS pool, creation wipes the HDD:
 task apply      # operator-run, modifies the host
 # If updates require a reboot, in a maintenance window:
 task reboot     # reboots pve-00; waits for Proxmox and Ansible reconnect
 ```
 
-Check mode previews file changes but cannot create or mount new storage. On this host `slow` already exists; on a fresh replacement host creating it **erases the entire matching HDD**. Package candidates can change when the no-subscription repository is refreshed during apply. `task reboot` is independent of `task apply`, waits up to 15 minutes for the host to return, then verifies Ansible connectivity. It intentionally is not run in a check-mode plan.
+Check mode previews the Proxmox ZFS storage ID changes but does not perform them. Both currently contain no VM/CT volumes; if volumes are added before apply, the rename aborts. The underlying pools are not renamed. On a fresh replacement host, creating `slow` **erases the entire matching HDD**. Package candidates can change when the no-subscription repository is refreshed during apply. `task reboot` is independent of `task apply`, waits up to 15 minutes, then verifies Ansible connectivity.
 
-After apply, verify with `ssh pve-00 'zpool status; pvesm status; pvesm list nfs-proxmox-template; pvesm list nfs-proxmox-iso'`. The NFS exports should be active. A single-disk pool has **no redundancy**; keep independent backups. The P2000 remains assigned to its current host driver; do not assign it to a guest yet.
+After apply, verify with `ssh pve-00 'zpool status; pvesm status; pvesm list local-nvme; pvesm list local-hdd'`. Expect `local` to retain its default name and the two ZFS storages to use the new names. A single-disk pool has **no redundancy**; keep independent backups. The P2000 remains on its current host driver; do not assign it to a guest yet.

@@ -51,15 +51,14 @@
     - slow_pool_status.rc != 0
     - not ansible_check_mode
 
-- name: Check Proxmox slow storage registration
-  ansible.builtin.command: "pvesm status --storage {{ proxmox_storage_slow_pool }}"
-  register: slow_storage_status
-  failed_when: false
-  changed_when: false
+- name: Read Proxmox storage definitions before renaming storage IDs
+  ansible.builtin.slurp:
+    src: /etc/pve/storage.cfg
+  register: proxmox_storage_config
   check_mode: false
 
-- name: Register slow pool for VM and container disks
-  ansible.builtin.command: "pvesm add zfspool {{ proxmox_storage_slow_pool }} --pool {{ proxmox_storage_slow_pool }} --content images,rootdir --sparse 1"
-  when:
-    - slow_storage_status.rc != 0
-    - not ansible_check_mode
+- name: Configure descriptive ZFS storage IDs
+  ansible.builtin.include_tasks: zfs_storage.yml
+  loop: "{{ proxmox_storage_zfs }}"
+  loop_control:
+    loop_var: zfs_storage

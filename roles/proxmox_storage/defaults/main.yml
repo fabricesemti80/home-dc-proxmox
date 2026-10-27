@@ -2,3 +2,13 @@
 proxmox_storage_slow_disk: /dev/disk/by-id/wwn-0x5000cca23dd4bfa4
 proxmox_storage_slow_disk_serial: PK2334PBHGMYWR
 proxmox_storage_slow_pool: slow
+
+# Proxmox storage IDs only: underlying ZFS pools and the default `local` stay unchanged.
+proxmox_storage_zfs:
+  - id: local-nvme
+    legacy_id: local-zfs
+    pool: rpool/data
+  - id: local-hdd
+    legacy_id: slow
+    pool: slow
+    mountpoint: /slow
