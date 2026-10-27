@@ -1,3 +1,0 @@
----
-proxmox_ceph_maintenance_script: /usr/local/sbin/proxmox-ceph-maintenance
-proxmox_ceph_maintenance_cron_name: Weekly Proxmox Ceph maintenance

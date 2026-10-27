@@ -1,0 +1,24 @@
+---
+- name: Check NAS exports available to host
+  ansible.builtin.command: "showmount -e {{ proxmox_nfs_server }}"
+  register: proxmox_nfs_exports
+  changed_when: false
+  check_mode: false
+
+- name: Verify required NAS exports exist
+  ansible.builtin.assert:
+    that: "item.export in proxmox_nfs_exports.stdout"
+    fail_msg: "NFS export {{ item.export }} not available on {{ proxmox_nfs_server }}."
+  loop: "{{ proxmox_nfs_storages }}"
+
+- name: Read current Proxmox storage definitions
+  ansible.builtin.slurp:
+    src: /etc/pve/storage.cfg
+  register: proxmox_nfs_storage_cfg
+  check_mode: false
+
+- name: Configure NAS storage definitions
+  ansible.builtin.include_tasks: configure.yml
+  loop: "{{ proxmox_nfs_storages }}"
+  loop_control:
+    loop_var: nfs_storage

@@ -1,11 +1,12 @@
 ---
-- name: update-grub
+- name: Refresh GRUB configuration
   ansible.builtin.command: update-grub
+  when: not ansible_check_mode
 
-- name: update-initramfs
+- name: Refresh initramfs
   ansible.builtin.command: update-initramfs -u -k all
-  failed_when: false
+  when: not ansible_check_mode
 
-- name: refresh-boot-tool
+- name: Refresh Proxmox boot entries
   ansible.builtin.command: proxmox-boot-tool refresh
-  failed_when: false
+  when: not ansible_check_mode

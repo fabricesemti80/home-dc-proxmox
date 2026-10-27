@@ -1,21 +1,7 @@
 ---
-# defaults/main.yml for proxmox_gpu_passthrough
-
-proxmox_gpu_passthrough_enabled: true
-
-proxmox_gpu_passthrough_modules:
-  - vfio
-  - vfio_iommu_type1
-  - vfio_pci
-  - vfio_virqfd
-
-proxmox_gpu_passthrough_blacklist:
-  - nouveau
-  - nvidia
-  - nvidiafb
-  - radeon
-  - amdgpu
-
-proxmox_gpu_passthrough_pci_ids: ""
-
-proxmox_gpu_passthrough_reboot: true
+# Fail closed if PCI addresses or hardware IDs change.
+proxmox_gpu_devices:
+  - address: '0000:02:00.0'
+    id: '10de:1c30'
+  - address: '0000:02:00.1'
+    id: '10de:10f1'

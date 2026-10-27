@@ -1,0 +1,47 @@
+---
+- name: Inspect existing definition for {{ nfs_storage.name }}
+  ansible.builtin.set_fact:
+    proxmox_nfs_existing: "{{ (proxmox_nfs_storage_cfg.content | b64decode | regex_search('(?m)^nfs: ' ~ nfs_storage.name ~ '\\n(?:[ \\t].*\\n)*')) | default('', true) }}"
+    proxmox_nfs_conflicting: "{{ (proxmox_nfs_storage_cfg.content | b64decode | regex_search('(?m)^\\S+: ' ~ nfs_storage.name ~ '\\n(?:[ \\t].*\\n)*')) | default('', true) }}"
+
+- name: Refuse to replace a storage with a different type
+  ansible.builtin.assert:
+    that: proxmox_nfs_conflicting == '' or proxmox_nfs_existing != ''
+    fail_msg: "Storage {{ nfs_storage.name }} already exists with a different type."
+
+- name: Register NAS export {{ nfs_storage.name }}
+  ansible.builtin.command:
+    argv:
+      - pvesm
+      - add
+      - nfs
+      - "{{ nfs_storage.name }}"
+      - --server
+      - "{{ proxmox_nfs_server }}"
+      - --export
+      - "{{ nfs_storage.export }}"
+      - --content
+      - "{{ nfs_storage.content }}"
+  when:
+    - proxmox_nfs_existing == ''
+    - not ansible_check_mode
+
+- name: Update existing NAS export {{ nfs_storage.name }} if settings differ
+  ansible.builtin.command:
+    argv:
+      - pvesm
+      - set
+      - "{{ nfs_storage.name }}"
+      - --server
+      - "{{ proxmox_nfs_server }}"
+      - --export
+      - "{{ nfs_storage.export }}"
+      - --content
+      - "{{ nfs_storage.content }}"
+  when:
+    - proxmox_nfs_existing != ''
+    - >-
+      ('server ' ~ proxmox_nfs_server) not in proxmox_nfs_existing or
+      ('export ' ~ nfs_storage.export) not in proxmox_nfs_existing or
+      ('content ' ~ nfs_storage.content) not in proxmox_nfs_existing
+    - not ansible_check_mode

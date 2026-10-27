@@ -1,196 +1,65 @@
 ---
-- name: Install pciutils for GPU detection
-  ansible.builtin.apt:
-    name: pciutils
-    state: present
-  when: proxmox_gpu_passthrough_enabled | bool
-
-- name: Detect PCI devices
-  ansible.builtin.command: lspci -nn
-  register: lspci_output
+- name: Inspect selected GPU PCI functions
+  ansible.builtin.command: "lspci -nns {{ item.address }}"
+  loop: "{{ proxmox_gpu_devices }}"
+  register: gpu_pci_devices
   changed_when: false
-  when: proxmox_gpu_passthrough_enabled | bool
+  check_mode: false
 
-- name: Detect CPU vendor
-  ansible.builtin.shell: lscpu | grep -i vendor || lscpu | head -5
-  register: cpu_info
-  changed_when: false
-  when: proxmox_gpu_passthrough_enabled | bool
+- name: Refuse passthrough if hardware differs from the inventory
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - "('[%s]' | format(item.item.id)) in item.stdout"
+    fail_msg: "PCI device {{ item.item.address }} is not {{ item.item.id }}; refusing to alter GPU bindings."
+  loop: "{{ gpu_pci_devices.results }}"
 
-- name: Set CPU vendor fact
-  ansible.builtin.set_fact:
-    cpu_vendor: "{{ 'intel' if 'intel' in cpu_info.stdout|lower else 'amd' if 'amd' in cpu_info.stdout|lower else 'unknown' }}"
-  when: proxmox_gpu_passthrough_enabled | bool
+- name: Read firmware primary display selection
+  ansible.builtin.slurp:
+    src: /sys/bus/pci/devices/0000:05:00.0/boot_vga
+  register: console_boot_vga
+  check_mode: false
 
-- name: Set facts for GPU vendors
-  ansible.builtin.set_fact:
-    has_intel_gpu: "{{ '8086' in lspci_output.stdout }}"
-    has_nvidia_gpu: "{{ '10de' in lspci_output.stdout }}"
-    has_amd_gpu: "{{ '1002' in lspci_output.stdout }}"
-  when: proxmox_gpu_passthrough_enabled | bool
+- name: Require GT 710 as firmware primary display before applying passthrough
+  ansible.builtin.assert:
+    that: (console_boot_vga.content | b64decode | trim) == '1'
+    fail_msg: Set GT 710 as primary display in BIOS and reboot before applying P2000 passthrough.
+  when: not ansible_check_mode
 
-- name: Determine dominant GPU vendor
-  ansible.builtin.set_fact:
-    gpu_vendor: "{{ 'nvidia' if has_nvidia_gpu else 'amd' if has_amd_gpu else 'intel' if has_intel_gpu else 'unknown' }}"
-  when: proxmox_gpu_passthrough_enabled | bool
-
-- name: Display detected hardware
-  ansible.builtin.debug:
-    msg: "Detected CPU: {{ cpu_vendor }}, GPU: {{ gpu_vendor }}"
-  when: proxmox_gpu_passthrough_enabled | bool
-
-- name: Check for systemd-boot
+- name: Check systemd-boot kernel command line
   ansible.builtin.stat:
     path: /etc/kernel/cmdline
-  register: systemd_boot_stat
-  when: proxmox_gpu_passthrough_enabled | bool
+  register: kernel_cmdline
 
-- name: Define IOMMU parameter
-  ansible.builtin.set_fact:
-    iommu_param: "{{ 'intel_iommu=on' if cpu_vendor == 'intel' else 'amd_iommu=on' if cpu_vendor == 'amd' else '' }}"
-  when: proxmox_gpu_passthrough_enabled | bool
-
-- name: Check current GRUB config
-  ansible.builtin.command: grep GRUB_CMDLINE_LINUX_DEFAULT /etc/default/grub
-  register: grub_current
-  changed_when: false
-  failed_when: false
-  when: proxmox_gpu_passthrough_enabled | bool and not systemd_boot_stat.stat.exists
-
-- name: Configure GRUB for IOMMU
-  ansible.builtin.replace:
-    path: /etc/default/grub
-    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT="([^"]*)"$'
-    replace: 'GRUB_CMDLINE_LINUX_DEFAULT="\1 {{ iommu_param }} iommu=pt"'
-  when:
-    - proxmox_gpu_passthrough_enabled | bool
-    - not systemd_boot_stat.stat.exists
-    - iommu_param != ""
-    - iommu_param not in grub_current.stdout
-  notify: update-grub
-
-- name: Configure GRUB for efifb disabled
-  ansible.builtin.replace:
-    path: /etc/default/grub
-    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT="([^"]*)"$'
-    replace: 'GRUB_CMDLINE_LINUX_DEFAULT="\1 video=efifb:off"'
-  when:
-    - proxmox_gpu_passthrough_enabled | bool
-    - not systemd_boot_stat.stat.exists
-    - gpu_vendor != 'unknown'
-    - '"video=efifb:off" not in grub_current.stdout'
-  notify: update-grub
-
-- name: Check current kernel cmdline
-  ansible.builtin.command: cat /etc/kernel/cmdline
-  register: cmdline_current
-  changed_when: false
-  failed_when: false
-  when: proxmox_gpu_passthrough_enabled | bool and systemd_boot_stat.stat.exists
-
-- name: Configure systemd-boot for IOMMU
+- name: Enable Intel IOMMU on systemd-boot installations
   ansible.builtin.replace:
     path: /etc/kernel/cmdline
-    regexp: '^(.*)$'
-    replace: '\1 {{ iommu_param }} iommu=pt'
-  when:
-    - proxmox_gpu_passthrough_enabled | bool
-    - systemd_boot_stat.stat.exists
-    - iommu_param != ""
-    - iommu_param not in cmdline_current.stdout
-  notify: update-initramfs
+    regexp: '^(?!.*intel_iommu=on)(.*\S)(\s*)$'
+    replace: '\1 intel_iommu=on\2'
+  when: kernel_cmdline.stat.exists
+  notify: Refresh Proxmox boot entries
 
-- name: Configure systemd-boot for efifb disabled
+- name: Enable Intel IOMMU on GRUB installations
   ansible.builtin.replace:
-    path: /etc/kernel/cmdline
-    regexp: '^(.*)$'
-    replace: '\1 video=efifb:off'
-  when:
-    - proxmox_gpu_passthrough_enabled | bool
-    - systemd_boot_stat.stat.exists
-    - gpu_vendor != 'unknown'
-    - '"video=efifb:off" not in cmdline_current.stdout'
-  notify: update-initramfs
+    path: /etc/default/grub
+    regexp: '^(GRUB_CMDLINE_LINUX_DEFAULT="(?![^"]*intel_iommu=on)[^"\n]*)(")$'
+    replace: '\1 intel_iommu=on\2'
+  when: not kernel_cmdline.stat.exists
+  notify: Refresh GRUB configuration
 
-- name: Load VFIO modules
-  ansible.builtin.lineinfile:
-    path: /etc/modules
-    line: "{{ item }}"
-    create: yes
-  loop: "{{ proxmox_gpu_passthrough_modules }}"
-  when: proxmox_gpu_passthrough_enabled | bool
-  notify: update-initramfs
-
-- name: Blacklist GPU drivers
+- name: Load VFIO early without blacklisting the console GPU driver
   ansible.builtin.copy:
-    dest: /etc/modprobe.d/pve-blacklist.conf
+    dest: /etc/modules-load.d/p2000-vfio.conf
+    mode: '0644'
     content: |
-      {% for driver in proxmox_gpu_passthrough_blacklist %}
-      blacklist {{ driver }}
-      {% endfor %}
-    mode: '0644'
-  when: proxmox_gpu_passthrough_enabled | bool
-  notify: update-initramfs
+      vfio
+      vfio_pci
+      vfio_iommu_type1
+  notify: Refresh initramfs
 
-- name: Bind specific PCI IDs to vfio-pci
+- name: Bind only P2000 graphics and audio PCI IDs to vfio-pci
   ansible.builtin.copy:
-    dest: /etc/modprobe.d/vfio.conf
-    content: "options vfio-pci ids={{ proxmox_gpu_passthrough_pci_ids }}"
+    dest: /etc/modprobe.d/p2000-vfio.conf
     mode: '0644'
-  when:
-    - proxmox_gpu_passthrough_enabled | bool
-    - proxmox_gpu_passthrough_pci_ids != ""
-  notify: update-initramfs
-
-- name: Flush handlers
-  ansible.builtin.meta: flush_handlers
-
-- name: Reboot if needed
-  ansible.builtin.reboot:
-    msg: "Rebooting for GPU passthrough configuration changes"
-    reboot_timeout: 300
-  when: proxmox_gpu_passthrough_enabled | bool and proxmox_gpu_passthrough_reboot | bool
-
-- name: Wait for host to come back
-  ansible.builtin.wait_for_connection:
-    timeout: 300
-  when: proxmox_gpu_passthrough_enabled | bool and proxmox_gpu_passthrough_reboot | bool
-
-- name: Verify IOMMU is enabled
-  ansible.builtin.command: dmesg | grep -i "IOMMU enabled"
-  register: iommu_check
-  changed_when: false
-  failed_when: false
-  when: proxmox_gpu_passthrough_enabled | bool
-
-- name: Verify VFIO modules are loaded
-  ansible.builtin.command: lsmod | grep vfio
-  register: vfio_check
-  changed_when: false
-  failed_when: false
-  when: proxmox_gpu_passthrough_enabled | bool
-
-- name: Detect GPU after reboot
-  ansible.builtin.command: lspci -nn | grep -i -E "vga|3d|display"
-  register: gpu_check
-  changed_when: false
-  failed_when: false
-  when: proxmox_gpu_passthrough_enabled | bool
-
-- name: Check GRUB config
-  ansible.builtin.command: cat /etc/default/grub | grep -i iommu
-  register: grub_check
-  changed_when: false
-  failed_when: false
-  when: proxmox_gpu_passthrough_enabled | bool and not systemd_boot_stat.stat.exists
-
-- name: Display post-reboot status
-  ansible.builtin.debug:
-    msg: |
-      GPU Passthrough Configuration Status:
-      ======================================
-      IOMMU: {{ 'ENABLED' if iommu_check.rc == 0 else 'CHECK MANUALLY' }}
-      VFIO Modules: {{ vfio_check.stdout_lines | length }} loaded ({{ vfio_check.stdout | default('none') }})
-      GPU Detected: {{ gpu_check.stdout | default('none') }}
-      GRUB Config: {{ grub_check.stdout | default('not using GRUB') }}
-  when: proxmox_gpu_passthrough_enabled | bool
+    content: "options vfio-pci ids={{ proxmox_gpu_devices | map(attribute='id') | join(',') }}\nsoftdep nouveau pre: vfio-pci\nsoftdep snd_hda_intel pre: vfio-pci\n"
+  notify: Refresh initramfs

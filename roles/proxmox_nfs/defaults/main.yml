@@ -1,0 +1,9 @@
+---
+proxmox_nfs_server: 10.0.40.2
+proxmox_nfs_storages:
+  - name: nfs-proxmox-template
+    export: /proxmox-template
+    content: vztmpl,images
+  - name: nfs-proxmox-iso
+    export: /proxmox-iso
+    content: iso,import
