@@ -1,7 +1,7 @@
 ---
 # Fail closed if PCI addresses or hardware IDs change.
 proxmox_gpu_devices:
-  - address: '0000:02:00.0'
+  - address: '0000:5b:00.0'
     id: '10de:1c30'
-  - address: '0000:02:00.1'
+  - address: '0000:5b:00.1'
     id: '10de:10f1'

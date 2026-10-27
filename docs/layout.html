@@ -22,11 +22,11 @@
 <body>
 <main>
 <h1>Standalone Proxmox VE host</h1>
-<p>Intended storage layout after applying Ansible. GPU passthrough is deferred; neither graphics card is reconfigured by this playbook.</p>
+<p>Intended layout after applying Ansible and separately rebooting: GT 710 remains the host console, P2000 is reserved for guest passthrough. No VM is created by this playbook.</p>
 <div class="diagram">
 <svg viewBox="0 0 840 420" role="img" aria-labelledby="layout-title layout-desc">
 <title id="layout-title">pve-00 standalone host layout</title>
-<desc id="layout-desc">Ansible configures one Proxmox host connected to LAN and NAS template and ISO NFS exports, with NVMe fast storage and HDD slow storage; GPU passthrough remains disabled.</desc>
+<desc id="layout-desc">Ansible configures one Proxmox host connected to LAN and NAS template and ISO NFS exports, with NVMe and HDD storage, GT 710 console, and P2000 reserved for guest passthrough after apply and reboot.</desc>
 <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M 0 0 L 8 4 L 0 8 Z" fill="#4f5d75"/></marker></defs>
 <rect class="boundary" x="272" y="56" width="536" height="312"/>
 <text x="292" y="84">pve-00 · Proxmox VE 9</text>
@@ -46,7 +46,7 @@
 <rect class="node" x="296" y="236" width="224" height="96"/>
 <text x="312" y="268">GT 710</text><text class="detail" x="312" y="296">unchanged host driver</text>
 <rect class="node" x="544" y="236" width="240" height="96"/>
-<text x="560" y="268">P2000</text><text class="detail" x="560" y="296">passthrough deferred</text>
+<text x="560" y="268">P2000</text><text class="detail" x="560" y="296">VFIO after apply + reboot</text>
 </svg>
 </div>
 </main>

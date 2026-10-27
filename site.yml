@@ -20,6 +20,5 @@
       tags: storage
     - role: proxmox_nfs
       tags: nfs
-    # Deferred until GT 710 is selected as firmware boot VGA:
-    # - role: proxmox_gpu_passthrough
-    #   tags: [gpu, passthrough]
+    - role: proxmox_gpu_passthrough
+      tags: [gpu, passthrough]

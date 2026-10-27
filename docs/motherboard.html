@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pve-00 hardware reference</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 24px; background: #f5f5f5; color: #2d3142; font: 16px system-ui, sans-serif; }
+  main { max-width: 960px; margin: auto; }
+  h1 { font: 32px Georgia, serif; }
+  h2 { margin-top: 32px; font-size: 20px; }
+  .diagram { overflow-x: auto; }
+  svg { min-width: 880px; width: 100%; height: auto; }
+  text { fill: #2d3142; font: 16px system-ui, sans-serif; }
+  .detail { fill: #4f5d75; font: 13px ui-monospace, monospace; }
+  .label { fill: #4f5d75; font: 13px system-ui, sans-serif; }
+  .board { fill: none; stroke: #bfc0c0; stroke-width: 2; }
+  .node { fill: #f5f5f5; stroke: #4f5d75; stroke-width: 1.5; rx: 6; }
+  .focus { stroke: #bf4520; stroke-width: 2; }
+  .rule { stroke: #bfc0c0; stroke-width: 1; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid #bfc0c0; padding: 8px; text-align: left; vertical-align: top; }
+  th { white-space: nowrap; }
+  code { font: 0.9em ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<main>
+<h1>pve-00 · hardware reference</h1>
+<p>Dell Precision 7820 Tower, system board <code>0G7W4R</code> (A00). PCIe rows are in the <strong>operator-observed physical order, starting at the CPU side</strong>; numbers 1–5 here describe that order, not Dell's printed SLOT labels. Connector widths not established per physical position are marked unknown.</p>
+<div class="diagram">
+<svg viewBox="0 0 880 680" role="img" aria-labelledby="board-title board-desc">
+<title id="board-title">pve-00 PCIe and DIMM allocation</title>
+<desc id="board-desc">Five PCIe connectors in CPU-side physical order: empty, NVMe daughter card, P2000, GT 710, empty; two populated Xeon memory banks with four empty DIMM sockets.</desc>
+<rect class="board" x="16" y="20" width="848" height="632" rx="8"/>
+<text class="label" x="36" y="48">CPU side → five PCIe connectors → opposite side · operator-observed order</text>
+<rect class="node" x="36" y="64" width="808" height="80"/>
+<text x="52" y="92">Position 1 · EMPTY</text>
+<text class="detail" x="52" y="120">Electrical width not mapped to this connector · check Dell board label</text>
+<rect class="node" x="36" y="156" width="808" height="80"/>
+<text x="52" y="184">Position 2 · NVMe daughter card</text>
+<text class="detail" x="52" y="212">Samsung SSD via Intel VMD · device x4 at 8 GT/s · connector width unverified</text>
+<rect class="node focus" x="36" y="248" width="808" height="80"/>
+<text x="52" y="276">Position 3 · Quadro P2000</text>
+<text class="detail" x="52" y="304">5b:00.0/.1 · x16 at 8 GT/s · guest VFIO after apply + reboot</text>
+<rect class="node" x="36" y="340" width="808" height="80"/>
+<text x="52" y="368">Position 4 · GT 710 · host console</text>
+<text class="detail" x="52" y="396">02:00.0/.1 · x1 at 5 GT/s · connector width unverified</text>
+<rect class="node" x="36" y="432" width="808" height="80"/>
+<text x="52" y="460">Position 5 · EMPTY</text>
+<text class="detail" x="52" y="488">Electrical width not mapped to this connector · check Dell board label</text>
+<line class="rule" x1="36" y1="532" x2="844" y2="532"/>
+<text class="label" x="36" y="560">CPU and memory banks · 128 GB installed total</text>
+<rect class="node" x="36" y="572" width="392" height="60"/>
+<text x="52" y="596">CPU0 · Xeon Gold 6152</text>
+<text class="detail" x="52" y="618">DIMM 1, 2, 5, 6: 16 GB each · 3, 4: empty</text>
+<rect class="node" x="452" y="572" width="392" height="60"/>
+<text x="468" y="596">CPU1 · Xeon Gold 6152</text>
+<text class="detail" x="468" y="618">DIMM 1, 2, 5, 6: 16 GB each · 3, 4: empty</text>
+</svg>
+</div>
+<h2>Slot planning: what is known</h2>
+<p>Dell specifies five PCIe Gen 3 x16-length connectors: two wired x16, one x8, one x4 and one x1, plus a separate legacy PCI 32/33 position. The operator confirmed the five PCIe positions and their occupancy in CPU-side order. The P2000 negotiates x16; the GT 710 negotiates x1; the NVMe device negotiates x4 behind Intel VMD. These are <strong>device link widths, not a full connector-width map</strong>. Before installing an SFP card or another NVMe device in empty position 1 or 5, check that connector's printed SLOT label, electrical wiring, card clearance and CPU dependency. SMBIOS misleadingly reports all SLOT1–SLOT6 as “Available” even with cards installed.</p>
+<table>
+<thead><tr><th>Device / group</th><th>Observed details</th><th>Before changing hardware</th></tr></thead>
+<tbody>
+<tr><td>GT 710</td><td><code>0000:02:00.0/.1</code>; primary firmware display, negotiated x1 at 5 GT/s</td><td>Leave as host console; check firmware display selection after moving cards.</td></tr>
+<tr><td>Quadro P2000</td><td><code>0000:5b:00.0/.1</code>; x16 at 8 GT/s; IOMMU group 2</td><td>Passthrough role is enabled in Ansible; apply and reboot separately before assigning it to a VM.</td></tr>
+<tr><td>Samsung NVMe</td><td><code>10001:01:00.0</code>; x4 at 8 GT/s, Intel VMD</td><td>Boot device: do not remove/reseat without confirming the bay/card and boot path.</td></tr>
+<tr><td>Memory</td><td>128 GB installed: 8 × 16 GB Micron <code>18ASF2G72PDZ-2G6D1</code>, 2666 MT/s; four DIMM sockets empty (two per CPU)</td><td>Use Dell's population rules and matching ECC RDIMMs; verify module type on-site.</td></tr>
+</tbody>
+</table>
+<p>Physical card order was provided by the operator; device identities, link widths and DIMM occupancy were read from <code>lspci</code>, <code>dmidecode</code>, <code>lsblk</code> and sysfs on <code>pve-00</code>. Dell's <a href="https://www.dell.com/support/manuals/en-us/precision-7820-workstation/precision_7820_om_pub/system-board-components?guid=guid-eb0862b4-951e-4794-addf-3ce0d3ae1e74&amp;lang=en-us">system board component diagram</a> locates the connectors; its <a href="https://www.dell.com/support/manuals/en-us/precision-7820-workstation/precision_7820_om_pub/card-slots?guid=guid-b6df22e3-9703-4e17-bf9b-4c6d02dddb24&amp;lang=en-us">card-slot specifications</a> give the system's lane capacities.</p>
+</main>
+</body>
+</html>
