@@ -9,6 +9,19 @@
     that: proxmox_nfs_conflicting == '' or proxmox_nfs_existing != ''
     fail_msg: "Storage {{ nfs_storage.name }} already exists with a different type."
 
+- name: Read effective NAS storage options
+  ansible.builtin.set_fact:
+    proxmox_nfs_actual_export: "{{ (proxmox_nfs_existing | regex_findall('(?m)^\\s+export\\s+([^\\n]+)$') | first) | default('') }}"
+    proxmox_nfs_actual_server: "{{ (proxmox_nfs_existing | regex_findall('(?m)^\\s+server\\s+([^\\n]+)$') | first) | default('') }}"
+    proxmox_nfs_actual_content: "{{ (proxmox_nfs_existing | regex_findall('(?m)^\\s+content\\s+([^\\n]+)$') | first) | default('') }}"
+  when: proxmox_nfs_existing != ''
+
+- name: Refuse to change an existing NAS export path
+  ansible.builtin.assert:
+    that: proxmox_nfs_actual_export == nfs_storage.export
+    fail_msg: "Storage {{ nfs_storage.name }} points to {{ proxmox_nfs_actual_export }}; Proxmox cannot change an NFS export with pvesm set."
+  when: proxmox_nfs_existing != ''
+
 - name: Register NAS export {{ nfs_storage.name }}
   ansible.builtin.command:
     argv:
@@ -26,7 +39,7 @@
     - proxmox_nfs_existing == ''
     - not ansible_check_mode
 
-- name: Update existing NAS export {{ nfs_storage.name }} if settings differ
+- name: Update supported NAS settings if they differ
   ansible.builtin.command:
     argv:
       - pvesm
@@ -34,14 +47,11 @@
       - "{{ nfs_storage.name }}"
       - --server
       - "{{ proxmox_nfs_server }}"
-      - --export
-      - "{{ nfs_storage.export }}"
       - --content
       - "{{ nfs_storage.content }}"
   when:
     - proxmox_nfs_existing != ''
     - >-
-      ('server ' ~ proxmox_nfs_server) not in proxmox_nfs_existing or
-      ('export ' ~ nfs_storage.export) not in proxmox_nfs_existing or
-      ('content ' ~ nfs_storage.content) not in proxmox_nfs_existing
+      proxmox_nfs_actual_server != proxmox_nfs_server or
+      (proxmox_nfs_actual_content.split(',') | sort) != (nfs_storage.content.split(',') | sort)
     - not ansible_check_mode
