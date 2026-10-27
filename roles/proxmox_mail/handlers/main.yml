@@ -1,0 +1,31 @@
+---
+- name: Build Gmail password map
+  ansible.builtin.command: postmap /etc/postfix/sasl_passwd
+  no_log: true
+  notify: Secure Gmail password map
+  when: not ansible_check_mode
+
+- name: Build sender rewrite map
+  ansible.builtin.command: postmap /etc/postfix/generic
+  when: not ansible_check_mode
+  notify: Reload Postfix
+
+- name: Refresh mail aliases
+  ansible.builtin.command: newaliases
+  when: not ansible_check_mode
+  notify: Reload Postfix
+
+- name: Secure Gmail password map
+  ansible.builtin.file:
+    path: /etc/postfix/sasl_passwd.db
+    owner: root
+    group: root
+    mode: '0600'
+  when: not ansible_check_mode
+  notify: Reload Postfix
+
+- name: Reload Postfix
+  ansible.builtin.service:
+    name: postfix
+    state: reloaded
+  when: not ansible_check_mode

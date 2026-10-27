@@ -17,13 +17,17 @@ flowchart LR
     end
 ```
 
-The diagram shows storage allocation; the P2000 role is now enabled in Ansible, but passthrough takes effect only after the operator runs apply and reboots. A [standalone diagram](docs/layout.html) is also available for offline viewing. See [storage details](docs/storage.md) for disk identities and content assignments.
+The diagram shows storage allocation; P2000 passthrough is enabled and was verified after the operator's reboot. A [standalone diagram](docs/layout.html) is also available for offline viewing. See [storage details](docs/storage.md) for disk identities and content assignments.
 
 For physical upgrades, see the [motherboard allocation diagram](docs/motherboard.html): the operator-confirmed CPU-side order of the five PCIe positions is empty → NVMe → P2000 → GT 710 → empty. It also records CPU and DIMM occupancy. The empty connectors' electrical widths remain to be checked against their board labels.
 
 ## GPU passthrough
 
-The BIOS selects the GT 710 as primary display (`0000:02:00.0`, `boot_vga=1`); the P2000 (`0000:5b:00.0`, `boot_vga=0`) is the guest GPU. **The GPU role is enabled in `site.yml`** and checks these assumptions before making changes. The P2000 graphics and audio functions share isolated IOMMU group 2; the GT 710 functions are in group 36. On `task apply` the role prepares IOMMU and VFIO, then the operator must run `task reboot` separately. Verify the P2000 uses `vfio-pci` and the GT 710 retains its host driver before assigning a guest. See [GPU passthrough notes](docs/gpu-passthrough.md).
+The BIOS selects the GT 710 as primary display (`0000:02:00.0`, `boot_vga=1`); the P2000 (`0000:5b:00.0`, `boot_vga=0`) is reserved for a guest. The enabled GPU role checks those assumptions. After the prior apply and reboot, both P2000 functions were verified bound to `vfio-pci` in isolated IOMMU group 2 while the GT 710 remained on `nouveau` in group 36. Future GPU hardware changes require rechecking those IDs. See [GPU passthrough notes](docs/gpu-passthrough.md).
+
+## Alerts and local certificate
+
+`pve-00.krapulax.home` is internal-only. Certificate automation is deferred; browsers will continue to warn until a trusted CA or public-domain name is chosen. The [mail setup](docs/mail.md) uses an ignored `.env` created from [`.env_example`](.env_example) to relay queued Proxmox and ZFS/system alerts through the dedicated Gmail account. Initial Proxmox and local-root mail tests both reached the recipient inbox. The mail role does not change networking or require a reboot.
 
 ## Playbook and roles
 
@@ -33,8 +37,9 @@ The BIOS selects the GT 710 as primary display (`0000:02:00.0`, `boot_vga=1`); t
 2. `roles/proxmox_storage/` — verify the HDD identity, create `slow` ZFS pool if absent, register descriptive Proxmox IDs `local-nvme` and `local-hdd`. Disk WWN, expected serial, pool and storage names are in `defaults/main.yml`. The default `local` ID is never changed.
 3. `roles/proxmox_nfs/` — register the NAS template and ISO exports with Proxmox content restrictions. Server, exports and content are in its defaults; no backup NFS export is mapped.
 4. `roles/proxmox_gpu_passthrough/` — verifies GPU identity and firmware primary display, enables Intel IOMMU, and prepares selective VFIO binding for the P2000. PCI IDs are in its defaults.
+5. `roles/proxmox_mail/` — configure the existing loopback-only Postfix as a Gmail smarthost, root mail alias, and Proxmox root alert recipient. Credentials come solely from ignored `.env`.
 
-Each role owns its tasks and defaults. `site.yml` does not duplicate their implementation. Use `ansible-playbook -i inventory site.yml --check --diff --tags gpu` (or `--tags nfs` / `--tags storage` / `--tags updates`) for a focused preview; `task plan` previews all active roles.
+Each role owns its tasks and defaults. `site.yml` does not duplicate their implementation. Use `ansible-playbook -i inventory site.yml --check --diff --tags mail` (or `--tags gpu` / `--tags nfs` / `--tags storage` / `--tags updates`) for a focused preview; `task plan` previews all active roles. The mail role requires a private `.env`, even in check mode; see [mail setup](docs/mail.md).
 
 ## What Ansible changes
 
@@ -42,11 +47,12 @@ Each role owns its tasks and defaults. `site.yml` does not duplicate their imple
 - Migrates the empty Proxmox ZFS storage IDs `local-zfs` → `local-nvme` and `slow` → `local-hdd`, retaining the ZFS pools `rpool/data` and `slow` and all underlying data. Refuses to rename a storage with VM/CT volumes or a conflicting new ID. On a fresh host without the `slow` pool, creates it by **erasing the entire matching HDD**. Default `local` on the NVMe remains unchanged.
 - Adds `nfs-proxmox-template` (`/proxmox-template`: `vztmpl,images`) and `nfs-proxmox-iso` (`/proxmox-iso`: `iso,import`) from `10.0.40.2`. VM templates use Proxmox `images` content, which also permits ordinary VM disks. Does not mount `/proxmox-backup` or configure PBS.
 - Prepares passthrough for the P2000 graphics and audio functions only, without globally blacklisting the GT 710's driver. Changes become active after a separate reboot; no VM is created.
+- Configures queued Gmail smarthost delivery for the existing Proxmox sendmail notification target and ZFS/root system mail. The app password is not shown in diffs; the operator verifies delivery after applying.
 - Never reboots automatically during `task apply`. The separate operator-run `task reboot` uses Ansible's reboot module and waits for Proxmox and SSH to return. No role installs a guest VM, backup jobs, agent, or cluster services.
 
 ## Plan → apply → verify
 
-Requires local Ansible and Task (`task`), working root SSH via the `pve-00` alias, and a trusted SSH host key. From the repository root:
+Requires local Ansible and Task (`task`), working root SSH via the `pve-00` alias, a trusted SSH host key, and a mode-`0600` ignored `.env` with the Gmail app password (see [mail setup](docs/mail.md)). From the repository root:
 
 ```sh
 ansible-playbook -i inventory site.yml --syntax-check

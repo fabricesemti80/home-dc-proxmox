@@ -1,4 +1,8 @@
 ---
+- name: "========== ROLE: STORAGE =========="
+  ansible.builtin.debug:
+    msg: "Local NVMe and HDD ZFS storage"
+
 - name: Inspect HDD identity
   ansible.builtin.command: "lsblk -dn -o SERIAL {{ proxmox_storage_slow_disk }}"
   register: slow_disk_serial

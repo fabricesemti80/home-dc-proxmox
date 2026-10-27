@@ -1,4 +1,8 @@
 ---
+- name: "========== ROLE: NFS =========="
+  ansible.builtin.debug:
+    msg: "NAS template and ISO exports"
+
 - name: Check NAS exports available to host
   ansible.builtin.command: "showmount -e {{ proxmox_nfs_server }}"
   register: proxmox_nfs_exports

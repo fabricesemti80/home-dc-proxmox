@@ -1,4 +1,8 @@
 ---
+- name: "========== ROLE: UPDATES =========="
+  ansible.builtin.debug:
+    msg: "APT repositories and package upgrades"
+
 - name: Disable subscription-only Proxmox repository
   ansible.builtin.file:
     path: /etc/apt/sources.list.d/pve-enterprise.sources

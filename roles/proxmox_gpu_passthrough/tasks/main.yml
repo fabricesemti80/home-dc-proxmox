@@ -1,4 +1,8 @@
 ---
+- name: "========== ROLE: GPU PASSTHROUGH =========="
+  ansible.builtin.debug:
+    msg: "P2000 VFIO binding; GT 710 stays on the host"
+
 - name: Inspect selected GPU PCI functions
   ansible.builtin.command: "lspci -nns {{ item.address }}"
   loop: "{{ proxmox_gpu_devices }}"

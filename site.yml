@@ -22,3 +22,5 @@
       tags: nfs
     - role: proxmox_gpu_passthrough
       tags: [gpu, passthrough]
+    - role: proxmox_mail
+      tags: mail

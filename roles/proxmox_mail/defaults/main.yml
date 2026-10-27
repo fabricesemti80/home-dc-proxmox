@@ -1,0 +1,5 @@
+---
+proxmox_mail_sender: "{{ lookup('ini', 'PVE_ALERT_SENDER type=properties file=' ~ playbook_dir ~ '/.env') }}"
+proxmox_mail_recipient: "{{ lookup('ini', 'PVE_ALERT_RECIPIENT type=properties file=' ~ playbook_dir ~ '/.env') }}"
+proxmox_mail_app_password: "{{ lookup('ini', 'GMAIL_APP_PASSWORD type=properties file=' ~ playbook_dir ~ '/.env') }}"
+proxmox_mail_relay: '[smtp.gmail.com]:587'
