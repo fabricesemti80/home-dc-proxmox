@@ -47,7 +47,7 @@ Each role owns its tasks and defaults. `site.yml` does not duplicate their imple
 - Retains existing `local-zfs` (`rpool/data`) on the NVMe and `slow` on the HGST HDD for VM/container disks. On a fresh host without `slow`, the storage role creates it by **erasing the entire matching HDD**. `local` on the NVMe remains available for ISOs/templates/backups.
 - Adds `nfs-proxmox-template` (`/proxmox-template`: `vztmpl,images`) and `nfs-proxmox-iso` (`/proxmox-iso`: `iso,import`) from `10.0.40.2`. VM templates use Proxmox `images` content, which also permits ordinary VM disks. Does not mount `/proxmox-backup` or configure PBS.
 - GPU role is retained but **not invoked**. No GPU passthrough or host console change is performed.
-- Never reboots automatically. No role installs a guest VM, backup jobs, agent, or cluster services.
+- Never reboots automatically during `task apply`. The separate operator-run `task reboot` uses Ansible's reboot module and waits for Proxmox and SSH to return. No role installs a guest VM, backup jobs, agent, or cluster services.
 
 ## Plan → apply → verify
 
@@ -58,8 +58,10 @@ ansible-playbook -i inventory site.yml --syntax-check
 task plan       # check mode + diff; no host configuration applied
 # Review the plan; on a fresh host lacking slow, creation wipes the HDD:
 task apply      # operator-run, modifies the host
+# If updates require a reboot, in a maintenance window:
+task reboot     # reboots pve-00; waits for Proxmox and Ansible reconnect
 ```
 
-Check mode previews file changes but cannot create or mount new storage. On this host `slow` already exists; on a fresh replacement host creating it **erases the entire matching HDD**. Package candidates can change when the no-subscription repository is refreshed during apply. Allow a maintenance window for upgrades and a manual reboot.
+Check mode previews file changes but cannot create or mount new storage. On this host `slow` already exists; on a fresh replacement host creating it **erases the entire matching HDD**. Package candidates can change when the no-subscription repository is refreshed during apply. `task reboot` is independent of `task apply`, waits up to 15 minutes for the host to return, then verifies Ansible connectivity. It intentionally is not run in a check-mode plan.
 
 After apply, verify with `ssh pve-00 'zpool status; pvesm status; pvesm list nfs-proxmox-template; pvesm list nfs-proxmox-iso'`. The NFS exports should be active. A single-disk pool has **no redundancy**; keep independent backups. The P2000 remains assigned to its current host driver; do not assign it to a guest yet.
