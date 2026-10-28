@@ -24,3 +24,5 @@
       tags: [gpu, passthrough]
     - role: proxmox_mail
       tags: mail
+    - role: proxmox_terraform_credentials
+      tags: terraform-credentials

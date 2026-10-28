@@ -6,6 +6,11 @@ tasks:
       - task --list
     silent: true
 
+  op-token-save:
+    desc: Securely add or replace the 1Password service-account token in macOS Keychain
+    cmds:
+      - python3 scripts/save-op-token.py
+
   plan:
     desc: Preview standalone host changes without applying them
     cmds:

@@ -3,28 +3,43 @@
   ansible.builtin.debug:
     msg: "Gmail relay for Proxmox and ZFS alerts"
 
-- name: Inspect controller mail configuration file
-  ansible.builtin.stat:
-    path: "{{ playbook_dir }}/.env"
-  delegate_to: localhost
-  become: false
-  register: proxmox_mail_env_file
-
-- name: Require private controller mail configuration
-  ansible.builtin.assert:
-    that:
-      - proxmox_mail_env_file.stat.isreg | default(false)
-      - proxmox_mail_env_file.stat.mode | default('') in ['0600', '0400']
-    fail_msg: Copy .env_example to .env, fill it, and chmod 600 .env before running the mail role.
-
 - name: Require Gmail relay inputs
   ansible.builtin.assert:
     that:
       - proxmox_mail_sender | trim | length > 0
       - proxmox_mail_sender | trim | lower is match('^[^@\\s]+@gmail\\.com$')
       - proxmox_mail_recipient | trim | length > 0
-      - proxmox_mail_app_password | trim | length > 0
-    fail_msg: Fill the Gmail sender, recipient, and app password in the ignored .env file.
+    fail_msg: Gmail sender and recipient must be set in role defaults.
+  no_log: true
+
+- name: Require a nonempty 1Password service-account token
+  ansible.builtin.assert:
+    that: proxmox_mail_service_token | length > 0
+    fail_msg: Store an iac service-account token with task op-token-save before running mail configuration.
+  no_log: true
+
+- name: Read tagged Proxmox Gmail credential with service-account CLI
+  ansible.builtin.command:
+    argv: [op, item, get, atg64te5scffvndeiyq2trjvja, --vault, iac, --format, json]
+  delegate_to: localhost
+  become: false
+  environment:
+    OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_mail_service_token }}"
+    OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
+  register: proxmox_mail_credential_item
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Read concealed Gmail app password
+  ansible.builtin.set_fact:
+    proxmox_mail_secret: "{{ (proxmox_mail_credential_item.stdout | from_json).fields | selectattr('id', 'equalto', 'credential') | map(attribute='value') | first | default('') }}"
+  no_log: true
+
+- name: Require a nonempty 1Password Gmail credential
+  ansible.builtin.assert:
+    that: proxmox_mail_secret | trim | length > 0
+    fail_msg: Check the tagged pve-00-gmail-alerts item in the iac vault.
   no_log: true
 
 - name: Ensure Gmail SASL and CA dependencies are installed
@@ -57,7 +72,7 @@
     mode: '0600'
     owner: root
     group: root
-    content: "{{ proxmox_mail_relay }} {{ proxmox_mail_sender }}:{{ proxmox_mail_app_password }}\n"
+    content: "{{ proxmox_mail_relay }} {{ proxmox_mail_sender }}:{{ proxmox_mail_secret }}\n"
   no_log: true
   notify: Build Gmail password map
 
