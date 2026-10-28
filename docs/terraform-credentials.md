@@ -1,0 +1,20 @@
+# Terraform API identity for pve-00
+
+The `proxmox_terraform_credentials` role runs with normal `task plan`/`task apply`. On its first apply it creates `terraform@pve`, grants the built-in `Administrator` role on `/`, creates a **privilege-separated** `provisioning` API token expiring one year after creation, grants the same role to the token, and stores the one-time token secret in a new `iac` vault item named `pve-00-terraform-api-token` tagged `proxmox`. The resulting token identifier is `terraform@pve!provisioning`. This is effectively **root-level Proxmox API access**: review the plan before the next full apply. Proxmox API tokens cannot access interactive system/VM consoles.
+
+The old-host `proxmox-terraform-user` vault item is not touched. The new item holds `username` (token identifier) and a concealed `credential` (token secret). Do not paste either token into Git, an Ansible variable file, a Terraform `.tfvars` file, task output, or chat. Terraform must obtain its token from 1Password at runtime. This role does not write a Terraform configuration or automatically distribute the credential to CI.
+
+## Operator workflow
+
+1. Replace the old read-only service-account token in Keychain with your new `iac` read/write token using `task op-token-save` ([setup](mail.md#service-account-authentication-on-macos)). **One account** serves mail reads, vault checks, and the Terraform item write; the Keychain item remains `home-dc-proxmox-op`. The account's grants cover **all** `iac` items, not just those tagged `proxmox`. No Ansible task invokes the personal desktop CLI.
+2. Run `task plan`. It includes this role and never generates a token in check mode. `ansible-playbook -i inventory site.yml --check --diff --tags terraform-credentials` previews only this role. A successful plan checks read access, **not write permission**.
+3. Confirm the new account has both read and write access to `iac`, review the full plan, then run `task apply`. On first apply it creates the root-equivalent Terraform identity and stores the token with that same service account. If item creation fails, the role checks for a stored item and removes the token ACL and revokes the new token only when it can confirm the item is absent. Subsequent runs never rotate the token.
+4. Confirm the new token and effective permissions with `ssh pve-00 'pveum user token list terraform@pve --output-format json; pveum user token permissions terraform@pve provisioning --output-format json'`, and confirm the new tagged item appears in the `iac` vault. Do not display the concealed credential. Re-running the tagged role must be unchanged.
+
+The role refuses to proceed if only one side of the token/vault pair exists or if the item is not tagged correctly. It never replaces an existing token: Proxmox returns a token's secret only at creation, so automatic recreation could invalidate Terraform credentials. A vault-write failure triggers token ACL cleanup and revocation **only if the role can verify the item was not stored**; an ambiguous network failure requires manual reconciliation rather than risking deletion of a stored credential. The Proxmox user and its ACL may remain after a failed write, but cannot authenticate without a valid token or password. A previous failed attempt left an invalid ACL for the revoked token; successful recreation makes that grant valid again.
+
+### Rotation and access
+
+To rotate before its one-year expiry, create a replacement token and 1Password item with new identifiers under a reviewed change, update Terraform consumers, verify access, then revoke the old token. Do not delete the vault item first. `Administrator` at `/` grants broad access; restrict network access to the PVE API and review/revoke this token when Terraform is retired. A `proxmox` tag does **not** limit access to items in `iac`; a future dedicated vault would require updating the role and service-account permissions.
+
+[Proxmox user and API-token model](https://pve.proxmox.com/pve-docs/chapter-pveum.html) · [pveum CLI reference](https://pve.proxmox.com/pve-docs/pveum.1.html)

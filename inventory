@@ -1,0 +1,2 @@
+[pve]
+pve-00 ansible_user=root

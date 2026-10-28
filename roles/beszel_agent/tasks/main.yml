@@ -1,8 +1,0 @@
----
-- name: Include install tasks
-  ansible.builtin.include_tasks: install.yml
-  when: beszel_agent_state == 'present'
-
-- name: Include remove tasks
-  ansible.builtin.include_tasks: remove.yml
-  when: beszel_agent_state == 'absent'

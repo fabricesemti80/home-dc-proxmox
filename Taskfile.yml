@@ -1,120 +1,27 @@
 version: '3'
 
-env:
-  PROXMOX_PYTHON: '{{.CONTROLLER_PYTHON | default "python3"}}'
-
 tasks:
   default:
-    desc: List safe standalone commands
-    cmds: [task --list]
+    cmds:
+      - task --list
     silent: true
 
-  validate:
-    desc: Validate the reviewed single-host inventory and configuration offline
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
+  op-token-save:
+    desc: Securely add or replace the 1Password service-account token in macOS Keychain
     cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" validate --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
-
-  discover:
-    desc: Discover the reviewed host without changing its configuration
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
-    cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" discover --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - python3 scripts/save-op-token.py
 
   plan:
-    desc: Preview the reviewed host configuration with check mode and diff
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
+    desc: Preview standalone host changes without applying them
     cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" plan --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - ansible-playbook -i inventory site.yml --check --diff
 
   apply:
-    desc: Apply the reviewed host configuration without an implicit reboot
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
+    desc: Apply standalone host configuration (operator initiated)
     cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" apply --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
-
-  verify:
-    desc: Verify the reviewed host configuration
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
-    cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" verify --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
-
-  gpu-discover:
-    desc: Discover GPU functions and isolation without changing the host
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
-    cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" gpu-discover --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
-
-  gpu-plan:
-    desc: Preview staged GPU preparation with check mode and diff
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
-    cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" gpu-plan --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
-
-  gpu-prepare:
-    desc: Prepare explicitly reviewed GPU devices without rebooting
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
-    cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" gpu-prepare --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
-
-  gpu-verify:
-    desc: Verify active GPU isolation and driver bindings
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
-    cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" gpu-verify --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - ansible-playbook -i inventory site.yml
 
   reboot:
-    desc: Explicitly reboot the reviewed host and verify reconnection
-    requires:
-      vars: [INVENTORY, CONFIG]
-    env:
-      STANDALONE_INVENTORY: '{{.INVENTORY}}'
-      STANDALONE_CONFIG: '{{.CONFIG}}'
-      STANDALONE_HOST: '{{.HOST | default ""}}'
+    desc: Reboot standalone host and wait for Proxmox and SSH to return
     cmds:
-      - bash "{{.TASKFILE_DIR}}/scripts/standalone-host.sh" reboot --inventory "$STANDALONE_INVENTORY" --config "$STANDALONE_CONFIG" --host "$STANDALONE_HOST"
+      - ansible-playbook -i inventory reboot.yml

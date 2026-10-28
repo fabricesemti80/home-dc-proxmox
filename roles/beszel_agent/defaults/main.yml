@@ -1,6 +1,0 @@
----
-beszel_agent_state: present
-beszel_agent_port: 45876
-beszel_agent_key: ""
-beszel_agent_token: ""
-beszel_agent_hub_url: ""

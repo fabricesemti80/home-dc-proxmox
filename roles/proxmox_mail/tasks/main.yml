@@ -1,0 +1,121 @@
+---
+- name: "========== ROLE: MAIL =========="
+  ansible.builtin.debug:
+    msg: "Gmail relay for Proxmox and ZFS alerts"
+
+- name: Require Gmail relay inputs
+  ansible.builtin.assert:
+    that:
+      - proxmox_mail_sender | trim | length > 0
+      - proxmox_mail_sender | trim | lower is match('^[^@\\s]+@gmail\\.com$')
+      - proxmox_mail_recipient | trim | length > 0
+    fail_msg: Gmail sender and recipient must be set in role defaults.
+  no_log: true
+
+- name: Require a nonempty 1Password service-account token
+  ansible.builtin.assert:
+    that: proxmox_mail_service_token | length > 0
+    fail_msg: Store an iac service-account token with task op-token-save before running mail configuration.
+  no_log: true
+
+- name: Read tagged Proxmox Gmail credential with service-account CLI
+  ansible.builtin.command:
+    argv: [op, item, get, atg64te5scffvndeiyq2trjvja, --vault, iac, --format, json]
+  delegate_to: localhost
+  become: false
+  environment:
+    OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_mail_service_token }}"
+    OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
+  register: proxmox_mail_credential_item
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Read concealed Gmail app password
+  ansible.builtin.set_fact:
+    proxmox_mail_secret: "{{ (proxmox_mail_credential_item.stdout | from_json).fields | selectattr('id', 'equalto', 'credential') | map(attribute='value') | first | default('') }}"
+  no_log: true
+
+- name: Require a nonempty 1Password Gmail credential
+  ansible.builtin.assert:
+    that: proxmox_mail_secret | trim | length > 0
+    fail_msg: Check the tagged pve-00-gmail-alerts item in the iac vault.
+  no_log: true
+
+- name: Ensure Gmail SASL and CA dependencies are installed
+  ansible.builtin.apt:
+    name:
+      - postfix
+      - libsasl2-modules
+      - ca-certificates
+    state: present
+
+- name: Configure Postfix Gmail relay settings
+  ansible.builtin.lineinfile:
+    path: /etc/postfix/main.cf
+    regexp: '^{{ item.key }}\s*='
+    line: '{{ item.key }} = {{ item.value }}'
+  loop:
+    - { key: relayhost, value: "{{ proxmox_mail_relay }}" }
+    - { key: smtp_sasl_auth_enable, value: 'yes' }
+    - { key: smtp_sasl_password_maps, value: 'hash:/etc/postfix/sasl_passwd' }
+    - { key: smtp_sasl_security_options, value: 'noanonymous' }
+    - { key: smtp_tls_security_level, value: 'secure' }
+    - { key: smtp_tls_secure_cert_match, value: 'nexthop' }
+    - { key: smtp_tls_CAfile, value: '/etc/ssl/certs/ca-certificates.crt' }
+    - { key: smtp_generic_maps, value: 'hash:/etc/postfix/generic' }
+  notify: Reload Postfix
+
+- name: Install root-only Gmail relay credentials
+  ansible.builtin.copy:
+    dest: /etc/postfix/sasl_passwd
+    mode: '0600'
+    owner: root
+    group: root
+    content: "{{ proxmox_mail_relay }} {{ proxmox_mail_sender }}:{{ proxmox_mail_secret }}\n"
+  no_log: true
+  notify: Build Gmail password map
+
+- name: Rewrite local root sender to the Gmail account
+  ansible.builtin.copy:
+    dest: /etc/postfix/generic
+    mode: '0644'
+    owner: root
+    group: root
+    content: |
+      root@{{ ansible_facts['fqdn'] }} {{ proxmox_mail_sender }}
+      root@localhost {{ proxmox_mail_sender }}
+      root {{ proxmox_mail_sender }}
+  notify: Build sender rewrite map
+
+- name: Route local root and ZFS event mail to alert recipient
+  ansible.builtin.lineinfile:
+    path: /etc/aliases
+    regexp: '^root:'
+    line: 'root: {{ proxmox_mail_recipient }}'
+  notify: Refresh mail aliases
+
+- name: Inspect Proxmox root alert address
+  ansible.builtin.command: pvesh get /access/users/root@pam --output-format json
+  changed_when: false
+  check_mode: false
+  register: proxmox_mail_root_user
+
+- name: Update Proxmox root alert address
+  ansible.builtin.command:
+    argv:
+      - pveum
+      - user
+      - modify
+      - root@pam
+      - --email
+      - "{{ proxmox_mail_recipient }}"
+  when:
+    - (proxmox_mail_root_user.stdout | from_json).email != proxmox_mail_recipient
+    - not ansible_check_mode
+
+- name: Ensure queued mail is processed
+  ansible.builtin.service:
+    name: postfix
+    state: started
+    enabled: true

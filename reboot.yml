@@ -1,0 +1,17 @@
+---
+- name: Reboot standalone Proxmox host
+  hosts: pve
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Reboot and wait for Proxmox to return
+      ansible.builtin.reboot:
+        msg: Reboot initiated by Ansible operator
+        reboot_timeout: 900
+        connect_timeout: 15
+        post_reboot_delay: 20
+        test_command: pveversion
+
+    - name: Confirm Ansible can reconnect after reboot
+      ansible.builtin.wait_for_connection:
+        timeout: 120

@@ -1,9 +1,28 @@
 ---
-- name: Safe standalone entry point
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  tasks:
-    - name: Require validated standalone wrapper
-      ansible.builtin.fail:
-        msg: 'Use scripts/standalone-host.sh ACTION --inventory ABS --config ABS --host ALIAS. Legacy cluster automation is unsupported here.'
+- name: Configure standalone Proxmox VE host
+  hosts: pve
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Require the installed Proxmox VE 9 host
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Debian'
+          - ansible_facts['distribution_major_version'] == '13'
+          - ansible_facts['architecture'] == 'x86_64'
+        fail_msg: This configuration targets the installed Proxmox VE 9 host (Debian 13).
+      tags: always
+
+  roles:
+    - role: proxmox_updates
+      tags: updates
+    - role: proxmox_storage
+      tags: storage
+    - role: proxmox_nfs
+      tags: nfs
+    - role: proxmox_gpu_passthrough
+      tags: [gpu, passthrough]
+    - role: proxmox_mail
+      tags: mail
+    - role: proxmox_terraform_credentials
+      tags: terraform-credentials

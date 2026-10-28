@@ -1,0 +1,6 @@
+---
+proxmox_mail_sender: automations.fs@gmail.com
+proxmox_mail_recipient: fabrice.semti@gmail.com
+proxmox_mail_relay: '[smtp.gmail.com]:587'
+# A read-capable iac service-account token; resolved on the controller only.
+proxmox_mail_service_token: "{{ lookup('env', 'OP_SERVICE_ACCOUNT_TOKEN') or lookup('pipe', 'security find-generic-password -a \"$USER\" -s home-dc-proxmox-op -w') }}"

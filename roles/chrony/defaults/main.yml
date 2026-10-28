@@ -1,9 +1,0 @@
----
-chrony_ntp_pools:
-  - 0.uk.pool.ntp.org
-  - 1.uk.pool.ntp.org
-  - 2.uk.pool.ntp.org
-  - 3.uk.pool.ntp.org
-
-chrony_config_file: /etc/chrony/chrony.conf
-chrony_service_name: chrony

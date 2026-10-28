@@ -1,0 +1,57 @@
+---
+- name: Inspect Proxmox storage IDs for {{ zfs_storage.id }}
+  ansible.builtin.set_fact:
+    old_storage_present: "{{ (proxmox_storage_config.content | b64decode | regex_search('(?m)^zfspool: ' ~ zfs_storage.legacy_id ~ '$')) is not none }}"
+    new_storage_present: "{{ (proxmox_storage_config.content | b64decode | regex_search('(?m)^zfspool: ' ~ zfs_storage.id ~ '$')) is not none }}"
+    new_storage_conflict: "{{ (proxmox_storage_config.content | b64decode | regex_search('(?m)^\\S+: ' ~ zfs_storage.id ~ '$')) is not none }}"
+
+- name: Refuse conflicting storage definitions
+  ansible.builtin.assert:
+    that:
+      - not (new_storage_conflict and not new_storage_present)
+      - not (old_storage_present and new_storage_present)
+    fail_msg: "Storage IDs {{ zfs_storage.legacy_id }} and {{ zfs_storage.id }} conflict; inspect /etc/pve/storage.cfg."
+
+- name: Check legacy storage is empty before changing its ID
+  ansible.builtin.command: "pvesm list {{ zfs_storage.legacy_id }}"
+  register: legacy_storage_volumes
+  changed_when: false
+  check_mode: false
+  when: old_storage_present and not new_storage_present
+
+- name: Refuse to rename storage containing VM or container volumes
+  ansible.builtin.assert:
+    that: legacy_storage_volumes.stdout_lines | length == 1
+    fail_msg: "{{ zfs_storage.legacy_id }} contains volumes; migrate their references before renaming."
+  when: old_storage_present and not new_storage_present
+
+- name: Preview local ZFS storage ID change
+  ansible.builtin.debug:
+    msg: "Will register {{ zfs_storage.id }} for {{ zfs_storage.pool }}{{ ' and remove ' ~ zfs_storage.legacy_id if old_storage_present else '' }}; ZFS pool and data remain unchanged."
+  changed_when: true
+  when: ansible_check_mode and not new_storage_present
+
+- name: Rename empty local ZFS storage ID
+  when:
+    - old_storage_present
+    - not new_storage_present
+    - not ansible_check_mode
+  block:
+    - name: Remove legacy storage configuration
+      ansible.builtin.command: "pvesm remove {{ zfs_storage.legacy_id }}"
+
+    - name: Register renamed ZFS storage
+      ansible.builtin.command: "pvesm add zfspool {{ zfs_storage.id }} --pool {{ zfs_storage.pool }} --content images,rootdir --sparse 1{{ ' --mountpoint ' ~ zfs_storage.mountpoint if zfs_storage.mountpoint is defined else '' }}"
+  rescue:
+    - name: Restore legacy storage configuration if registration failed
+      ansible.builtin.command: "pvesm add zfspool {{ zfs_storage.legacy_id }} --pool {{ zfs_storage.pool }} --content images,rootdir --sparse 1{{ ' --mountpoint ' ~ zfs_storage.mountpoint if zfs_storage.mountpoint is defined else '' }}"
+    - name: Report storage registration failure
+      ansible.builtin.fail:
+        msg: "Could not register {{ zfs_storage.id }}; restored {{ zfs_storage.legacy_id }}."
+
+- name: Register ZFS storage on fresh hosts
+  ansible.builtin.command: "pvesm add zfspool {{ zfs_storage.id }} --pool {{ zfs_storage.pool }} --content images,rootdir --sparse 1{{ ' --mountpoint ' ~ zfs_storage.mountpoint if zfs_storage.mountpoint is defined else '' }}"
+  when:
+    - not old_storage_present
+    - not new_storage_present
+    - not ansible_check_mode

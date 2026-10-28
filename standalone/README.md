@@ -14,24 +14,12 @@ See [design and operator runbook](../docs/standalone-host.md) for the exact cont
 
 Every action requires `--inventory ABS --config ABS`. Optional `--host ALIAS` confirms the inventory's unique literal host. Without it, the controller infers that alias only after rejecting empty or multi-host inventories, patterns and unsupported fields. All SSH actions require deployment_enabled true. Missing/disabled NFS and backup entries are unmanaged, never deletion or disable requests. No implicit reboot, VM assignment or local storage creation occurs.
 
-## Go Task and parent inclusion
+## Optional direct invocation
 
-Direct child tasks are `validate`, `discover`, `plan`, `apply`, `verify`, GPU actions and `reboot`. For example, run `task validate INVENTORY=/absolute/inventory.yml CONFIG=/absolute/host.yml`. There is no standalone task-name prefix or check alias. Plan uses `--check --diff`; apply uses the same playbook and reviewed inputs without check mode.
+The root `Taskfile.yml` is already assigned to the deployed `pve-00` roles; it does **not** expose this alternative component's actions. To use this component independently, prepare an isolated Python environment from `requirements.txt` and invoke the wrapper with reviewed absolute input paths:
 
-The control repository includes this Taskfile under a namespace and supplies its local input paths and prepared interpreter:
-
-```yaml
-includes:
-  proxmox:
-    taskfile: ./components/proxmox/Taskfile.yml
-    dir: ./components/proxmox
-    optional: true
-    vars:
-      INVENTORY: '{{.ROOT_DIR}}/config/proxmox/inventory.yml'
-      CONFIG: '{{.ROOT_DIR}}/config/proxmox/host.yml'
-      CONTROLLER_PYTHON: '{{.ROOT_DIR}}/.venv/bin/python3'
+```sh
+bash /absolute/repo/scripts/standalone-host.sh validate --inventory /absolute/inventory.yml --config /absolute/host.yml --host HOST
 ```
 
-From control, run `task proxmox:init` once to synchronise main branches, install the declared controller requirements and prepare missing local inputs. Review those inputs, then use bare `task proxmox:plan` and `task proxmox:apply`. Neither operation resynchronises sources or installs dependencies. Ansible apply is a fresh execution, not a saved-plan replay; do not run another init or change inputs between review and apply.
-
-Commands resolve their script from the defining Taskfile directory, not the parent's root. The parent-selected CONTROLLER_PYTHON is passed as PROXMOX_PYTHON; an absolute interpreter also selects ansible-playbook from its bin directory. Direct child use defaults to externally prepared python3. A missing selected interpreter fails instead of falling back. No Taskfile or launcher automatically loads `.env`. Debian bootstrap is historical material under `legacy/bootstrap/`, not an exported task or supported installation path.
+Replace `validate` with `discover`, `plan`, `apply`, `verify`, a GPU action, or `reboot` only after reviewing that action's contract. The wrapper resolves its own `standalone/ansible.cfg`, playbook and module paths and never loads `.env`. Do not run it against `pve-00` alongside the root roles without reconciling their policies. Debian bootstrap under `legacy/bootstrap/` remains historical, not an exported task.

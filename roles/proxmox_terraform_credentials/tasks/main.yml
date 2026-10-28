@@ -1,0 +1,222 @@
+---
+- name: "========== ROLE: TERRAFORM CREDENTIALS =========="
+  ansible.builtin.debug:
+    msg: "Provision the single-host Terraform administrator and store its API token in 1Password"
+
+- name: Inspect Proxmox API users
+  ansible.builtin.command: pveum user list --output-format json
+  register: terraform_users
+  changed_when: false
+  check_mode: false
+
+- name: Inspect Terraform API tokens when user exists
+  ansible.builtin.command: "pveum user token list {{ proxmox_terraform_user }} --output-format json"
+  register: terraform_tokens
+  changed_when: false
+  check_mode: false
+  when: proxmox_terraform_user in (terraform_users.stdout | from_json | map(attribute='userid') | list)
+
+- name: Inspect Proxmox permissions
+  ansible.builtin.command: pveum acl list --output-format json
+  register: terraform_acls
+  changed_when: false
+  check_mode: false
+
+# All controller-side op calls use the Keychain-backed service account.
+# A read-only token can plan, but creation requires write_items in iac.
+- name: Inspect destination vault with 1Password CLI
+  ansible.builtin.command:
+    argv: [op, item, list, --vault, "{{ proxmox_terraform_vault }}", --format, json]
+  delegate_to: localhost
+  become: false
+  environment:
+    OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
+    OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
+  register: terraform_vault_items
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Require access to the 1Password IaC vault
+  ansible.builtin.assert:
+    that: terraform_vault_items.rc | default(1) == 0
+    fail_msg: Store an iac read/write service-account token with task op-token-save, or supply OP_SERVICE_ACCOUNT_TOKEN, then retry.
+
+- name: Locate dedicated host Terraform credential
+  ansible.builtin.set_fact:
+    terraform_vault_matches: "{{ terraform_vault_items.stdout | from_json | selectattr('title', 'equalto', proxmox_terraform_item_title) | list }}"
+    terraform_token_present: "{{ proxmox_terraform_token_id in (terraform_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list) }}"
+  no_log: true
+
+- name: Refuse ambiguous or partially provisioned Terraform credentials
+  ansible.builtin.assert:
+    that:
+      - terraform_vault_matches | length <= 1
+      - (terraform_vault_matches | length == 1) == (terraform_token_present | bool)
+    fail_msg: Terraform token and 1Password item must both exist or both be absent. Reconcile manually; this role never rotates an unknown token.
+
+- name: Refuse a disabled Terraform user or expired API token
+  ansible.builtin.assert:
+    that:
+      - "(terraform_users.stdout | from_json | selectattr('userid', 'equalto', proxmox_terraform_user) | first).enable | int == 1"
+      - "(terraform_tokens.stdout | from_json | selectattr('tokenid', 'equalto', proxmox_terraform_token_id) | first).expire | int > ansible_facts['date_time']['epoch'] | int"
+    fail_msg: Terraform account is disabled or its token has expired; rotate intentionally rather than silently reusing it.
+  when: terraform_token_present | bool
+
+- name: Verify existing 1Password item identity
+  ansible.builtin.assert:
+    that:
+      - "'proxmox' in (terraform_vault_matches[0].tags | default([]))"
+      - "terraform_vault_matches[0].vault.id is defined"
+    fail_msg: Existing Terraform item has unexpected metadata; refusing to overwrite it.
+  when: terraform_vault_matches | length == 1
+
+- name: Inspect existing Terraform item fields without printing its secret
+  ansible.builtin.command:
+    argv: [op, item, get, "{{ terraform_vault_matches[0].id }}", --vault, "{{ proxmox_terraform_vault }}", --format, json]
+  delegate_to: localhost
+  become: false
+  environment:
+    OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
+    OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
+  register: terraform_existing_item
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: terraform_vault_matches | length == 1
+
+- name: Verify existing Terraform item has the expected identity and a secret
+  ansible.builtin.assert:
+    that:
+      - "(terraform_existing_item.stdout | from_json).fields | selectattr('id', 'equalto', 'username') | map(attribute='value') | first == proxmox_terraform_user ~ '!' ~ proxmox_terraform_token_id"
+      - "(terraform_existing_item.stdout | from_json).fields | selectattr('id', 'equalto', 'credential') | map(attribute='value') | first | length > 0"
+    fail_msg: Existing Terraform item is incomplete or for another token; refusing to replace it.
+  no_log: true
+  when: terraform_vault_matches | length == 1
+
+- name: Confirm service-account identity before creating a token
+  ansible.builtin.command:
+    argv: [op, user, get, --me, --format, json]
+  delegate_to: localhost
+  become: false
+  environment:
+    OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
+    OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
+  register: terraform_service_identity
+  changed_when: false
+  no_log: true
+  when:
+    - not ansible_check_mode
+    - not terraform_token_present | bool
+
+- name: Refuse token creation without a service-account identity
+  ansible.builtin.assert:
+    that: (terraform_service_identity.stdout | from_json).type == 'SERVICE_ACCOUNT'
+    fail_msg: Save an iac read/write service-account token with task op-token-save before applying.
+  when:
+    - not ansible_check_mode
+    - not terraform_token_present | bool
+
+- name: Create dedicated Proxmox Terraform user
+  ansible.builtin.command:
+    argv: [pveum, user, add, "{{ proxmox_terraform_user }}", --comment, "Terraform automation for pve-00 (API token only)"]
+  when:
+    - not ansible_check_mode
+    - proxmox_terraform_user not in (terraform_users.stdout | from_json | map(attribute='userid') | list)
+
+- name: Grant full Proxmox administrative access to Terraform user
+  ansible.builtin.command:
+    argv: [pveum, acl, modify, /, --users, "{{ proxmox_terraform_user }}", --roles, "{{ proxmox_terraform_role }}"]
+  when:
+    - not ansible_check_mode
+    - terraform_acls.stdout | from_json | selectattr('path', 'equalto', '/') | selectattr('ugid', 'equalto', proxmox_terraform_user) | selectattr('roleid', 'equalto', proxmox_terraform_role) | list | length == 0
+
+- name: Restore Terraform token administrator ACL when already provisioned
+  ansible.builtin.command:
+    argv: [pveum, acl, modify, /, --tokens, "{{ proxmox_terraform_user }}!{{ proxmox_terraform_token_id }}", --roles, "{{ proxmox_terraform_role }}"]
+  when:
+    - not ansible_check_mode
+    - terraform_token_present | bool
+    - terraform_acls.stdout | from_json | selectattr('path', 'equalto', '/') | selectattr('ugid', 'equalto', proxmox_terraform_user ~ '!' ~ proxmox_terraform_token_id) | selectattr('roleid', 'equalto', proxmox_terraform_role) | list | length == 0
+
+- name: Create and store Terraform API token atomically where possible
+  when:
+    - not ansible_check_mode
+    - not terraform_token_present | bool
+  block:
+    - name: Create privilege-separated Terraform API token
+      ansible.builtin.command:
+        argv: [pveum, user, token, add, "{{ proxmox_terraform_user }}", "{{ proxmox_terraform_token_id }}", --privsep, '1', --expire, "{{ ansible_facts['date_time']['epoch'] | int + proxmox_terraform_token_validity_seconds }}", --output-format, json]
+      register: terraform_new_token
+      no_log: true
+
+    - name: Grant Terraform token full host administrator ACL
+      ansible.builtin.command:
+        argv: [pveum, acl, modify, /, --tokens, "{{ proxmox_terraform_user }}!{{ proxmox_terraform_token_id }}", --roles, "{{ proxmox_terraform_role }}"]
+
+    - name: Store newly generated token as tagged API credential in 1Password
+      ansible.builtin.command:
+        argv: [op, item, create, --vault, "{{ proxmox_terraform_vault }}", --tags, proxmox, --format, json, '-']
+        stdin: >-
+          {{ {
+               'category': 'API_CREDENTIAL',
+               'title': proxmox_terraform_item_title,
+               'fields': [
+                 {'id': 'username', 'type': 'STRING', 'label': 'username', 'value': proxmox_terraform_user ~ '!' ~ proxmox_terraform_token_id},
+                 {'id': 'credential', 'type': 'CONCEALED', 'label': 'credential', 'value': (terraform_new_token.stdout | from_json).value}
+               ],
+               'notesPlain': 'pve-00 Terraform API token. Full Administrator ACL on /; protect as root-equivalent.'
+             } | to_json }}
+      delegate_to: localhost
+      become: false
+      environment:
+        OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
+        OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
+      register: terraform_created_item
+      no_log: true
+
+  rescue:
+    - name: Check whether credential was stored despite an interrupted response
+      ansible.builtin.command:
+        argv: [op, item, list, --vault, "{{ proxmox_terraform_vault }}", --format, json]
+      delegate_to: localhost
+      become: false
+      environment:
+        OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
+        OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
+      register: terraform_recovery_items
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Remove token ACL before revoking an unstored credential
+      ansible.builtin.command:
+        argv: [pveum, acl, delete, /, --tokens, "{{ proxmox_terraform_user }}!{{ proxmox_terraform_token_id }}", --roles, "{{ proxmox_terraform_role }}"]
+      when:
+        - terraform_new_token is defined
+        - terraform_new_token is succeeded
+        - terraform_recovery_items.rc == 0
+        - terraform_recovery_items.stdout | from_json | selectattr('title', 'equalto', proxmox_terraform_item_title) | list | length == 0
+      failed_when: false
+
+    - name: Revoke unarchived Terraform token if vault write failed
+      ansible.builtin.command:
+        argv: [pveum, user, token, delete, "{{ proxmox_terraform_user }}", "{{ proxmox_terraform_token_id }}"]
+      when:
+        - terraform_new_token is defined
+        - terraform_new_token is succeeded
+        - terraform_recovery_items.rc == 0
+        - terraform_recovery_items.stdout | from_json | selectattr('title', 'equalto', proxmox_terraform_item_title) | list | length == 0
+      no_log: true
+
+    - name: Stop after unsuccessful credential provisioning
+      ansible.builtin.fail:
+        msg: Terraform token provisioning did not complete. Inspect token and vault item presence before retrying; a token is never rotated automatically.
+
+- name: Explain check-mode token creation
+  ansible.builtin.debug:
+    msg: "Check mode: the next task apply will create and store the Terraform token; first replace the old read-only Keychain token with an iac read/write service-account token using task op-token-save."
+  when:
+    - ansible_check_mode
+    - not terraform_token_present | bool

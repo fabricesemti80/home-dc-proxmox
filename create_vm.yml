@@ -1,6 +1,0 @@
----
-- hosts: "{{ proxmox_vm_target_host | default('pve-0.fabricesemti.dev') }}"
-  become: true
-  gather_facts: false
-  roles:
-    - proxmox_vm

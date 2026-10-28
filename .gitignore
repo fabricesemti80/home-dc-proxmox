@@ -1,12 +1,10 @@
-inventory
+# Local credentials must never be committed.
+.env
+.envrc
+tokens/
 files/root_pve_rsa
 
-# Environment variables (contains sensitive credentials)
-.envrc
-.env
-
-# API tokens (contains sensitive API tokens)
-tokens/
+# Temporary operator inventory backups.
 inventory.backup
 
 # Standalone controller/runtime artifacts
