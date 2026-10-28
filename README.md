@@ -2,6 +2,8 @@
 
 This repository manages **one** Proxmox VE 9 host, `pve-00`. No cluster, Ceph, Beszel agent, HA, or backup jobs are configured. The installer-provided `vmbr0` and default file storage `local` remain untouched. Proxmox ZFS storage IDs are `local-nvme` and `local-hdd`; the underlying pools remain `rpool/data` and `slow`. The NAS at `10.0.40.2` supplies template, ISO, and backup NFS exports. The backup export is for existing VZDump archives; PBS is not configured.
 
+The incoming generic controller in [`standalone/`](standalone/README.md) remains available **only as a separate, explicitly invoked workflow** through `scripts/standalone-host.sh` with its own inventory/config. It is not included by `site.yml` or `task apply`; do not run both controllers against `pve-00` without reconciling their storage, repository, and GPU policies. The archived `legacy/` cluster material is not an active entry point.
+
 ## Layout
 
 ```mermaid

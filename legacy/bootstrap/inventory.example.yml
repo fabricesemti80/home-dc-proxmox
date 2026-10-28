@@ -1,0 +1,8 @@
+all:
+  children:
+    debian_bootstrap:
+      hosts:
+        pve:
+          ansible_host: 192.0.2.10 # Replace with real management address
+          ansible_user: replace-me
+          ansible_become: true

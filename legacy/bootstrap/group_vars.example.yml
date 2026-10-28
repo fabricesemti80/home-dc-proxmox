@@ -1,0 +1,5 @@
+# Copy settings into inventory group_vars or pass via -e.
+# Initial Debian installation must already have correct FQDN and a resolvable non-loopback address.
+pve_bootstrap_hostname: pve
+pve_bootstrap_domain: home.arpa
+pve_bootstrap_management_ip: 10.0.40.10
