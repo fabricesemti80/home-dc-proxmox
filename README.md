@@ -1,6 +1,6 @@
 # Standalone Proxmox VE host
 
-This repository manages **one** Proxmox VE 9 host, `pve-00`. No cluster, Ceph, Beszel agent, HA, or backup jobs are configured. The installer-provided `vmbr0` and default file storage `local` remain untouched. Proxmox ZFS storage IDs are `local-nvme` and `local-hdd`; the underlying pools remain `rpool/data` and `slow`. The NAS at `10.0.40.2` supplies template and ISO exports only. No backup NFS share is mapped; PBS may be configured later.
+This repository manages **one** Proxmox VE 9 host, `pve-00`. No cluster, Ceph, Beszel agent, HA, or backup jobs are configured. The installer-provided `vmbr0` and default file storage `local` remain untouched. Proxmox ZFS storage IDs are `local-nvme` and `local-hdd`; the underlying pools remain `rpool/data` and `slow`. The NAS at `10.0.40.2` supplies template, ISO, and backup NFS exports. The backup export is for existing VZDump archives; PBS is not configured.
 
 ## Layout
 
@@ -8,7 +8,7 @@ This repository manages **one** Proxmox VE 9 host, `pve-00`. No cluster, Ceph, B
 flowchart LR
     operator[Ansible operator] -->|SSH alias pve-00| host
     lan[10.0.40.0/24 LAN] ---|nic0 / vmbr0| host
-    nas[NAS · 10.0.40.2] -->|NFS template + ISO exports| host
+    nas[NAS · 10.0.40.2] -->|NFS template + ISO + backup exports| host
     subgraph host[pve-00 · Proxmox VE 9]
         zfs[NVMe · rpool/data → local-nvme]
         hdd[HDD · slow → local-hdd]
@@ -35,7 +35,7 @@ The BIOS selects the GT 710 as primary display (`0000:02:00.0`, `boot_vga=1`); t
 
 1. `roles/proxmox_updates/` — disable subscription-only sources, enable no-subscription PVE, upgrade packages. Repository URL and suite are in `defaults/main.yml`.
 2. `roles/proxmox_storage/` — verify the HDD identity, create `slow` ZFS pool if absent, register descriptive Proxmox IDs `local-nvme` and `local-hdd`. Disk WWN, expected serial, pool and storage names are in `defaults/main.yml`. The default `local` ID is never changed.
-3. `roles/proxmox_nfs/` — register the NAS template and ISO exports with Proxmox content restrictions. Server, exports and content are in its defaults; no backup NFS export is mapped.
+3. `roles/proxmox_nfs/` — register NAS template, ISO, and backup exports with Proxmox content restrictions. The backup share is limited to VZDump archives; no PBS datastore is mapped.
 4. `roles/proxmox_gpu_passthrough/` — verifies GPU identity and firmware primary display, enables Intel IOMMU, and prepares selective VFIO binding for the P2000. PCI IDs are in its defaults.
 5. `roles/proxmox_mail/` — configure the existing loopback-only Postfix as a Gmail smarthost, root mail alias, and Proxmox root alert recipient. Credentials come solely from ignored `.env`.
 
@@ -45,7 +45,7 @@ Each role owns its tasks and defaults. `site.yml` does not duplicate their imple
 
 - Removes subscription-only PVE and unused Ceph APT sources; adds the official `pve-no-subscription` repository for Debian trixie; updates APT metadata and performs a distribution upgrade. No Ceph installation or Ceph storage configuration.
 - Migrates the empty Proxmox ZFS storage IDs `local-zfs` → `local-nvme` and `slow` → `local-hdd`, retaining the ZFS pools `rpool/data` and `slow` and all underlying data. Refuses to rename a storage with VM/CT volumes or a conflicting new ID. On a fresh host without the `slow` pool, creates it by **erasing the entire matching HDD**. Default `local` on the NVMe remains unchanged.
-- Adds `nfs-proxmox-template` (`/proxmox-template`: `vztmpl,images`) and `nfs-proxmox-iso` (`/proxmox-iso`: `iso,import`) from `10.0.40.2`. VM templates use Proxmox `images` content, which also permits ordinary VM disks. Does not mount `/proxmox-backup` or configure PBS.
+- Adds `nfs-proxmox-template` (`/proxmox-template`: `vztmpl,images`), `nfs-proxmox-iso` (`/proxmox-iso`: `iso,import`), and `nfs-proxmox-backup` (`/proxmox-backup`: `backup` only) from `10.0.40.2`. Existing archives are not changed, and no new backup job is scheduled. The separate `/proxmox-pbs-datastore` export is not mapped.
 - Prepares passthrough for the P2000 graphics and audio functions only, without globally blacklisting the GT 710's driver. Changes become active after a separate reboot; no VM is created.
 - Configures queued Gmail smarthost delivery for the existing Proxmox sendmail notification target and ZFS/root system mail. The app password is not shown in diffs; the operator verifies delivery after applying.
 - Never reboots automatically during `task apply`. The separate operator-run `task reboot` uses Ansible's reboot module and waits for Proxmox and SSH to return. No role installs a guest VM, backup jobs, agent, or cluster services.
