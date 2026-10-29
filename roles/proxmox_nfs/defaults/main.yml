@@ -6,7 +6,7 @@ proxmox_nfs_storages:
     content: vztmpl,images
   - name: nfs-proxmox-iso
     export: /proxmox-iso
-    content: iso,import
+    content: iso,import,images
   - name: nfs-proxmox-backup
     export: /proxmox-backup
     content: backup

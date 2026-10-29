@@ -12,12 +12,22 @@ tasks:
       - python3 scripts/save-op-token.py
 
   plan:
-    desc: Preview standalone host changes without applying them
+    desc: Preview standalone PVE host configuration without applying it
     cmds:
       - ansible-playbook -i inventory site.yml --check --diff
+  nfs-plan:
+    desc: Preview only NFS storage configuration changes
+    cmds:
+      - ansible-playbook -i inventory site.yml --check --diff --tags nfs
+
+  nfs-apply:
+    desc: Apply only NFS storage configuration changes
+    cmds:
+      - ansible-playbook -i inventory site.yml --tags nfs
+
 
   apply:
-    desc: Apply standalone host configuration (operator initiated)
+    desc: Apply standalone PVE host configuration (operator initiated)
     cmds:
       - ansible-playbook -i inventory site.yml
 

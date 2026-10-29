@@ -22,6 +22,12 @@
     fail_msg: "Storage {{ nfs_storage.name }} points to {{ proxmox_nfs_actual_export }}; Proxmox cannot change an NFS export with pvesm set."
   when: proxmox_nfs_existing != ''
 
+- name: Refuse to change an existing NAS server
+  ansible.builtin.assert:
+    that: proxmox_nfs_actual_server == proxmox_nfs_server
+    fail_msg: "Storage {{ nfs_storage.name }} points to server {{ proxmox_nfs_actual_server }}; Proxmox cannot change an NFS server with pvesm set."
+  when: proxmox_nfs_existing != ''
+
 - name: Preview new NAS export {{ nfs_storage.name }}
   ansible.builtin.debug:
     msg: "Would register {{ proxmox_nfs_server }}:{{ nfs_storage.export }} as {{ nfs_storage.name }} ({{ nfs_storage.content }})."
@@ -46,19 +52,23 @@
     - proxmox_nfs_existing == ''
     - not ansible_check_mode
 
+- name: Preview supported NAS settings update for {{ nfs_storage.name }}
+  ansible.builtin.debug:
+    msg: "Would update {{ nfs_storage.name }} content to {{ nfs_storage.content }}."
+  when:
+    - proxmox_nfs_existing != ''
+    - (proxmox_nfs_actual_content.split(',') | sort) != (nfs_storage.content.split(',') | sort)
+    - ansible_check_mode
+
 - name: Update supported NAS settings if they differ
   ansible.builtin.command:
     argv:
       - pvesm
       - set
       - "{{ nfs_storage.name }}"
-      - --server
-      - "{{ proxmox_nfs_server }}"
       - --content
       - "{{ nfs_storage.content }}"
   when:
     - proxmox_nfs_existing != ''
-    - >-
-      proxmox_nfs_actual_server != proxmox_nfs_server or
-      (proxmox_nfs_actual_content.split(',') | sort) != (nfs_storage.content.split(',') | sort)
+    - (proxmox_nfs_actual_content.split(',') | sort) != (nfs_storage.content.split(',') | sort)
     - not ansible_check_mode
