@@ -8,7 +8,7 @@ The incoming generic controller in [`standalone/`](standalone/README.md) remains
 
 ![Logical overview of Ansible host configuration, Proxmox storage and hardware, and OpenTofu guest ownership](docs/architecture.svg)
 
-The diagram separates host configuration from guest provisioning and shows the LAN, NFS, storage, and GPU relationships. P2000 passthrough is enabled and was verified after the operator's reboot. A [detailed offline host diagram](docs/layout.html) is also available. See [storage details](docs/storage.md) for disk identities and content assignments.
+The diagram separates host configuration from guest provisioning and shows the LAN, NFS, storage, and GPU relationships. P2000 passthrough is enabled and was verified after the operator's reboot. A [detailed offline host diagram](docs/layout.html) is also available. See [storage details](docs/storage.md) for disk identities and content assignments, and the [hardware inventory](docs/hardware.md) for the observed disks, partition layouts, boot path, and free expansion points.
 
 For physical upgrades, see the [motherboard allocation diagram](docs/motherboard.html): the operator-confirmed CPU-side order of the five PCIe positions is empty → NVMe → P2000 → GT 710 → empty. It also records CPU and DIMM occupancy. The empty connectors' electrical widths remain to be checked against their board labels.
 
