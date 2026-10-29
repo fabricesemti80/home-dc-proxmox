@@ -37,7 +37,7 @@
       #proxmox-architecture-root .tag-focal { font: 500 7px var(--font-mono); letter-spacing: .1em; fill: var(--color-accent); }
       #proxmox-architecture-root .node-name { font: 600 12px var(--font-sans); fill: var(--color-ink); }
       #proxmox-architecture-root .sublabel { font: 400 9px var(--font-mono); fill: var(--color-soft); }
-      #proxmox-architecture-root .legend { font: 400 8px var(--font-mono); fill: var(--color-muted); letter-spacing: .04em; }</style>
+      #proxmox-architecture-root .legend { font: 400 8px var(--font-mono); fill: var(--color-muted); letter-spacing: .04em; } #proxmox-architecture-root .eyebrow { font: 500 8px var(--font-mono); letter-spacing: .18em; fill: var(--color-muted); }</style>
           <marker id="proxmox-architecture-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0 L8 3 L0 6 Z" fill="var(--color-muted)"/></marker>
           <marker id="proxmox-architecture-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0 L8 3 L0 6 Z" fill="var(--color-link)"/></marker>
         </defs>
