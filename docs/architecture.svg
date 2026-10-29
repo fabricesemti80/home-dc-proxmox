@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 960 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="proxmox-architecture-title proxmox-architecture-desc" id="proxmox-architecture-root">
+        <title id="proxmox-architecture-title">Proxmox host ownership</title>
+        <desc id="proxmox-architecture-desc">Ansible configures the standalone pve-00 host, its storage, network, NFS mounts and GPU roles; OpenTofu in home-dc-terraform owns guest VM and LXC creation.</desc>
+        <defs>
+      <style>#proxmox-architecture-root { --color-paper: #f5f5f5; --color-paper-2: #ececec; --color-ink: #2d3142;
+      --color-muted: #4f5d75; --color-soft: #5a6580; --color-rule: rgba(45,49,66,.12);
+      --color-rule-solid: #bfc0c0; --color-accent: #bf4520;
+      --color-accent-tint: rgba(191,69,32,.08); --color-link: #2e5aa8;
+      --font-sans: 'Geist', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', 'Noto Serif', serif;
+      --font-mono: 'Geist Mono', ui-monospace, monospace; }
+      @media (prefers-color-scheme: dark) {
+#proxmox-architecture-root { --color-paper: #2d3142; --color-paper-2: #393e53; --color-ink: #f5f5f5;
+        --color-muted: #bfc0c0; --color-soft: #949eb2; --color-rule: rgba(245,245,245,.12);
+        --color-rule-solid: rgba(191,192,192,.25); --color-accent: #f08a59;
+        --color-accent-tint: rgba(240,138,89,.10); --color-link: #739fdf; }
+}
+      #proxmox-architecture-root { color: var(--color-ink); font-family: var(--font-sans); }
+      #proxmox-architecture-root .diagram-container { width: 100%; overflow-x: auto; }
+      @media print {
+#proxmox-architecture-root .diagram-container { overflow-x: visible; }
+}
+      #proxmox-architecture-root .page-title { font: 400 28px/1.15 var(--font-serif); fill: var(--color-ink); }
+      #proxmox-architecture-root .page-subtitle { font: 400 12px var(--font-sans); fill: var(--color-muted); }
+      #proxmox-architecture-root .zone { fill: none; stroke: var(--color-rule-solid); stroke-width: .8; stroke-dasharray: 4 4; }
+      #proxmox-architecture-root .zone-mask { fill: var(--color-paper); }
+      #proxmox-architecture-root .zone-label { font: 500 8px var(--font-mono); letter-spacing: .14em; fill: var(--color-soft); }
+      #proxmox-architecture-root .control { fill: none; stroke: var(--color-muted); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+      #proxmox-architecture-root .service { fill: none; stroke: var(--color-link); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+      #proxmox-architecture-root .node { fill: var(--color-paper); stroke: var(--color-rule-solid); stroke-width: 1; }
+      #proxmox-architecture-root .node-focal { fill: var(--color-accent-tint); stroke: var(--color-accent); stroke-width: 1.2; }
+      #proxmox-architecture-root .node-external { fill: var(--color-paper-2); stroke: var(--color-rule-solid); stroke-width: 1; }
+      #proxmox-architecture-root .tag-box { fill: none; stroke: var(--color-rule-solid); stroke-width: .8; }
+      #proxmox-architecture-root .tag-box-focal { fill: none; stroke: var(--color-accent); stroke-width: .8; }
+      #proxmox-architecture-root .tag { font: 500 7px var(--font-mono); letter-spacing: .1em; fill: var(--color-muted); }
+      #proxmox-architecture-root .tag-focal { font: 500 7px var(--font-mono); letter-spacing: .1em; fill: var(--color-accent); }
+      #proxmox-architecture-root .node-name { font: 600 12px var(--font-sans); fill: var(--color-ink); }
+      #proxmox-architecture-root .sublabel { font: 400 9px var(--font-mono); fill: var(--color-soft); }
+      #proxmox-architecture-root .legend { font: 400 8px var(--font-mono); fill: var(--color-muted); letter-spacing: .04em; }</style>
+          <marker id="proxmox-architecture-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0 L8 3 L0 6 Z" fill="var(--color-muted)"/></marker>
+          <marker id="proxmox-architecture-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0 L8 3 L0 6 Z" fill="var(--color-link)"/></marker>
+        </defs>
+
+        <text x="40" y="32" class="eyebrow">HOME DC PROXMOX · HOST OPERATIONS</text>
+        <text x="40" y="70" class="page-title">One host, separately owned layers</text>
+        <text x="40" y="96" class="page-subtitle">Ansible configures pve-00; OpenTofu provisions its guests. No PVE cluster, HA, or Ceph.</text>
+
+        <g>
+          <rect x="40" y="128" width="220" height="392" rx="8" class="zone"/>
+          <rect x="280" y="128" width="416" height="392" rx="8" class="zone"/>
+          <rect x="716" y="128" width="204" height="392" rx="8" class="zone"/>
+          <rect x="52" y="132" width="112" height="14" rx="2" class="zone-mask"/>
+          <text x="108" y="142" text-anchor="middle" class="zone-label">CONTROL</text>
+          <rect x="292" y="132" width="152" height="14" rx="2" class="zone-mask"/>
+          <text x="368" y="142" text-anchor="middle" class="zone-label">PVE HOST + STORAGE</text>
+          <rect x="728" y="132" width="136" height="14" rx="2" class="zone-mask"/>
+          <text x="796" y="142" text-anchor="middle" class="zone-label">GUEST LIFECYCLE</text>
+        </g>
+
+        <g>
+          <path d="M244 218 H260 Q268 218 268 226 V328 Q268 336 276 336 H304" class="control" marker-end="url(#proxmox-architecture-arrow)"/>
+          <path d="M244 448 H260 Q268 448 268 440 V376 Q268 368 276 368 H304" class="service"/>
+          <path d="M488 244 V304" class="service" marker-end="url(#proxmox-architecture-arrow-link)"/>
+          <path d="M392 400 V440" class="control" marker-end="url(#proxmox-architecture-arrow)"/>
+          <path d="M584 400 V440" class="control" marker-end="url(#proxmox-architecture-arrow)"/>
+          <path d="M740 352 H672" class="service" marker-end="url(#proxmox-architecture-arrow-link)"/>
+        </g>
+        <g>
+          <rect x="492" y="264" width="36" height="12" rx="2" class="zone-mask"/>
+          <text x="510" y="273" text-anchor="middle" class="legend">NFS</text>
+          <rect x="678" y="332" width="56" height="12" rx="2" class="zone-mask"/>
+          <text x="706" y="341" text-anchor="middle" class="legend">GUEST API</text>
+        </g>
+
+        <g>
+          <rect x="56" y="184" width="188" height="68" rx="6" class="node-external"/>
+          <rect x="68" y="192" width="44" height="12" rx="2" class="tag-box"/>
+          <text x="90" y="201" text-anchor="middle" class="tag">OPERATOR</text>
+          <text x="68" y="222" class="node-name">Admin workstation</text>
+          <text x="68" y="240" class="sublabel">task plan / apply</text>
+
+          <rect x="56" y="416" width="188" height="64" rx="6" class="node-external"/>
+          <rect x="68" y="424" width="48" height="12" rx="2" class="tag-box"/>
+          <text x="92" y="433" text-anchor="middle" class="tag">NETWORK</text>
+          <text x="68" y="454" class="node-name">VLAN 40 clients</text>
+          <text x="68" y="470" class="sublabel">10.0.40.0/24 · vmbr0</text>
+
+          <rect x="304" y="176" width="368" height="68" rx="6" class="node-external"/>
+          <rect x="316" y="184" width="44" height="12" rx="2" class="tag-box"/>
+          <text x="338" y="193" text-anchor="middle" class="tag">NAS</text>
+          <text x="316" y="214" class="node-name">10.0.40.2 · NFS exports</text>
+          <text x="316" y="232" class="sublabel">templates · ISOs · VZDump archives</text>
+
+          <rect x="304" y="304" width="368" height="96" rx="6" class="node"/>
+          <rect x="316" y="312" width="56" height="12" rx="2" class="tag-box"/>
+          <text x="344" y="321" text-anchor="middle" class="tag">PVE HOST</text>
+          <text x="316" y="344" class="node-name">pve-00 · Proxmox VE 9</text>
+          <text x="316" y="364" class="sublabel">single host · no HA/Ceph</text>
+          <text x="316" y="382" class="sublabel">Ansible owns host config</text>
+
+          <rect x="304" y="440" width="176" height="64" rx="6" class="node"/>
+          <rect x="316" y="448" width="72" height="12" rx="2" class="tag-box"/>
+          <text x="352" y="457" text-anchor="middle" class="tag">STORAGE</text>
+          <text x="316" y="478" class="node-name">ZFS pools</text>
+          <text x="316" y="496" class="sublabel">local-nvme · local-hdd</text>
+
+          <rect x="496" y="440" width="176" height="64" rx="6" class="node"/>
+          <rect x="508" y="448" width="48" height="12" rx="2" class="tag-box"/>
+          <text x="532" y="457" text-anchor="middle" class="tag">GPU</text>
+          <text x="508" y="478" class="node-name">Host display + VFIO</text>
+          <text x="508" y="496" class="sublabel">GT 710 · P2000 passthrough</text>
+
+          <rect x="740" y="304" width="176" height="96" rx="6" class="node-focal"/>
+          <rect x="752" y="312" width="68" height="12" rx="2" class="tag-box-focal"/>
+          <text x="786" y="321" text-anchor="middle" class="tag-focal">OPENTOFU</text>
+          <text x="752" y="344" class="node-name">home-dc-terraform</text>
+          <text x="752" y="364" class="sublabel">guest VM / LXC lifecycle</text>
+          <text x="752" y="382" class="sublabel">not host configuration</text>
+        </g>
+
+        <g>
+          <path d="M56 560 H84" class="control" marker-end="url(#proxmox-architecture-arrow)"/>
+          <text x="96" y="563" class="legend">HOST CONFIG / CONTROL</text>
+          <path d="M312 560 H340" class="service" marker-end="url(#proxmox-architecture-arrow-link)"/>
+          <text x="352" y="563" class="legend">NETWORK / GUEST API</text>
+        </g>
+      </svg>

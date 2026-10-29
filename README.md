@@ -4,22 +4,11 @@ This repository manages **one** Proxmox VE 9 host, `pve-00`, using Ansible for h
 
 The incoming generic controller in [`standalone/`](standalone/README.md) remains available **only as a separate, explicitly invoked workflow** through `scripts/standalone-host.sh` with its own inventory/config. It is not included by `site.yml` or `task apply`; do not run both controllers against `pve-00` without reconciling their storage, repository, and GPU policies. The archived `legacy/` cluster material is not an active entry point.
 
-## Layout
+## Logical overview
 
-```mermaid
-flowchart LR
-    operator[Ansible operator] -->|SSH alias pve-00| host
-    lan[10.0.40.0/24 LAN] ---|nic0 / vmbr0| host
-    nas[NAS · 10.0.40.2] -->|NFS template + ISO + backup exports| host
-    subgraph host[pve-00 · Proxmox VE 9]
-        zfs[NVMe · rpool/data → local-nvme]
-        hdd[HDD · slow → local-hdd]
-        console[GT 710 · host console]
-        gpu[P2000 · VFIO after apply + reboot]
-    end
-```
+![Logical overview of Ansible host configuration, Proxmox storage and hardware, and OpenTofu guest ownership](docs/architecture.svg)
 
-The diagram shows storage allocation; P2000 passthrough is enabled and was verified after the operator's reboot. A [standalone diagram](docs/layout.html) is also available for offline viewing. See [storage details](docs/storage.md) for disk identities and content assignments.
+The diagram separates host configuration from guest provisioning and shows the LAN, NFS, storage, and GPU relationships. P2000 passthrough is enabled and was verified after the operator's reboot. A [detailed offline host diagram](docs/layout.html) is also available. See [storage details](docs/storage.md) for disk identities and content assignments.
 
 For physical upgrades, see the [motherboard allocation diagram](docs/motherboard.html): the operator-confirmed CPU-side order of the five PCIe positions is empty → NVMe → P2000 → GT 710 → empty. It also records CPU and DIMM occupancy. The empty connectors' electrical widths remain to be checked against their board labels.
 
