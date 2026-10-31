@@ -11,6 +11,11 @@ tasks:
     cmds:
       - python3 scripts/save-op-token.py
 
+  doppler-token-save:
+    desc: Securely add or replace the home-dc-proxmox/prd Doppler service token in macOS Keychain
+    cmds:
+      - python3 scripts/save-doppler-token.py
+
   plan:
     desc: Preview standalone PVE host configuration without applying it
     cmds:
