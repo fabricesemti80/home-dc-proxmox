@@ -43,7 +43,7 @@
 <text class="detail" x="52" y="212">Samsung SSD via Intel VMD · device x4 at 8 GT/s · connector width unverified</text>
 <rect class="node focus" x="36" y="248" width="808" height="80"/>
 <text x="52" y="276">Position 3 · Quadro P2000</text>
-<text class="detail" x="52" y="304">5b:00.0/.1 · x16 at 8 GT/s · guest VFIO after apply + reboot</text>
+<text class="detail" x="52" y="304">5b:00.0/.1 · x16 link, 8 GT/s capable (2.5 GT/s read at idle) · guest VFIO</text>
 <rect class="node" x="36" y="340" width="808" height="80"/>
 <text x="52" y="368">Position 4 · GT 710 · host console</text>
 <text class="detail" x="52" y="396">02:00.0/.1 · x1 at 5 GT/s · connector width unverified</text>
@@ -66,7 +66,7 @@
 <thead><tr><th>Device / group</th><th>Observed details</th><th>Before changing hardware</th></tr></thead>
 <tbody>
 <tr><td>GT 710</td><td><code>0000:02:00.0/.1</code>; primary firmware display, negotiated x1 at 5 GT/s</td><td>Leave as host console; check firmware display selection after moving cards.</td></tr>
-<tr><td>Quadro P2000</td><td><code>0000:5b:00.0/.1</code>; x16 at 8 GT/s; IOMMU group 2</td><td>Passthrough role is enabled in Ansible; apply and reboot separately before assigning it to a VM.</td></tr>
+<tr><td>Quadro P2000</td><td><code>0000:5b:00.0/.1</code>; x16 link; capability and target 8 GT/s, but 2.5 GT/s when sampled (card and root port <code>5a:00.0</code> both) while VM 4095, which owns it, was running; IOMMU group 2</td><td>Passthrough role is enabled in Ansible; apply and reboot separately before assigning it to a VM. Re-sample under GPU load before treating 2.5 GT/s as a fault.</td></tr>
 <tr><td>Samsung NVMe</td><td><code>10001:01:00.0</code>; x4 at 8 GT/s, Intel VMD</td><td>Boot device: do not remove/reseat without confirming the bay/card and boot path.</td></tr>
 <tr><td>Memory</td><td>128 GB installed: 8 × 16 GB Micron <code>18ASF2G72PDZ-2G6D1</code>, 2666 MT/s; four DIMM sockets empty (two per CPU)</td><td>Use Dell's population rules and matching ECC RDIMMs; verify module type on-site.</td></tr>
 </tbody>

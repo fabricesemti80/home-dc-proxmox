@@ -15,7 +15,7 @@ Nothing in this document is a change record. Physical work — adding disks, ope
 | Networking | Intel I219-LM onboard NIC (`0000:00:1f.6`) on `nic0`; bridges `vmbr0` (untagged, carries the two LXC veths and the VM tap devices), `vmbr0v40` over `nic0.40`, and `vmbr0v70` over `nic0.70` |
 | Graphics | Quadro P2000 `0000:5b:00.0/.1` (guest, `vfio-pci` after apply + reboot); GeForce GT 710 `0000:02:00.0/.1` (host console, firmware primary display) |
 
-GPU link widths as negotiated on the running kernel: the P2000 runs x16 but is currently downgraded to 2.5 GT/s (link capability 8 GT/s), and the GT 710 runs x1 at 5 GT/s (link capability 5 GT/s x8). The P2000 driver in use is `vfio-pci`, the GT 710's is `nouveau`.
+GPU link state as sampled on the running kernel: the P2000 has an x16 link with capability and target speed 8 GT/s, but both the card and its root port `0000:5a:00.0` read 2.5 GT/s. VM 4095 was running at the time and owns both P2000 functions through `hostpci0`/`hostpci1`. This is a single sample taken without GPU load, and the cause is not established. It is consistent with idle link-speed power management, but that was not tested. Do not treat 2.5 GT/s as a fault or as the card's usable bandwidth until it is re-sampled under load. The GT 710 runs x1 at 5 GT/s (capability 5 GT/s x8). Drivers in use: `vfio-pci` on the P2000, `nouveau` on the GT 710.
 
 ## Block devices
 
@@ -52,7 +52,7 @@ OpenZFS `2.4.4-pve1`; both pools are single-disk vdevs with `ashift=12` and no r
 
 | Pool | Size | Allocated | Member | Mountpoint / datasets |
 |---|---:|---:|---|---|
-| `rpool` | 944 GiB | 7.62 GiB | `nvme-eui.002538c571b0249f-part3` | `/rpool`; `rpool/ROOT/pve-1` is the root filesystem, `rpool/data` holds LXC 4019/4020 and VM 4090, `rpool/var-lib-vz` backs Proxmox `local` |
+| `rpool` | 944 GiB | 7.62 GiB | `nvme-eui.002538c571b0249f-part3` | `/rpool`; `rpool/ROOT/pve-1` is the root filesystem, `rpool/data` holds LXC 4020 and VM 4090, `rpool/var-lib-vz` backs Proxmox `local` |
 | `slow` | 3.62 TiB | 34.4 GiB | `wwn-0x5000cca23dd4bfa4-part1` | `/slow`; holds CT 9007/9008 and VM 4095/4096/4097 disks |
 
 Proxmox storage IDs map onto these pools: `local` is the `rpool/var-lib-vz` directory, `local-nvme` is the `rpool/data` dataset (`images,rootdir`), `local-hdd` is the `slow` pool (`images,rootdir`). See [storage.md](storage.md) for content assignments and NFS exports.
@@ -100,7 +100,7 @@ A ZFS mirror preserves roughly one member's usable capacity. Neither goal is a b
 
 ### Mirror the boot NVMe (`rpool`) — higher risk
 
-`rpool` carries the root filesystem, `rpool/data` (LXC 4019/4020, VM 4090) and `rpool/var-lib-vz` (Proxmox `local`). Mirroring it protects data against disk failure but does **not** by itself make the second disk bootable.
+`rpool` carries the root filesystem, `rpool/data` (LXC 4020, VM 4090) and `rpool/var-lib-vz` (Proxmox `local`). Mirroring it protects data against disk failure but does **not** by itself make the second disk bootable.
 
 1. Take and verify an independent backup, and confirm console access. The host boots from one ESP on one NVMe; a mistake during this work can leave it unbootable.
 2. Install the second NVMe and confirm it enumerates before partitioning anything: `lspci -nn | grep -i non-volatile` and `lsblk`. Under Intel VMD the drive may appear only if the BIOS keeps that lane routed to the controller; a card in a chipset-attached slot normally enumerates directly. Resolve this first — an invisible disk is not a partitioned-disk problem.
