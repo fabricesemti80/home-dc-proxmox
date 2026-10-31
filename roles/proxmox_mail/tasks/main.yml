@@ -12,34 +12,43 @@
     fail_msg: Gmail sender and recipient must be set in role defaults.
   no_log: true
 
-- name: Require a nonempty 1Password service-account token
+- name: Require a nonempty Doppler service token
   ansible.builtin.assert:
-    that: proxmox_mail_service_token | length > 0
-    fail_msg: Store an iac service-account token with task op-token-save before running mail configuration.
+    that: proxmox_mail_doppler_token | length > 0
+    fail_msg: Store the home-dc-proxmox/prd service token with task doppler-token-save before running mail configuration.
   no_log: true
 
-- name: Read tagged Proxmox Gmail credential with service-account CLI
+- name: Read Gmail app password from Doppler
   ansible.builtin.command:
-    argv: [op, item, get, atg64te5scffvndeiyq2trjvja, --vault, iac, --format, json]
+    argv:
+      - doppler
+      - secrets
+      - get
+      - "{{ proxmox_mail_doppler_secret }}"
+      - --json
+      - --project
+      - "{{ proxmox_mail_doppler_project }}"
+      - --config
+      - "{{ proxmox_mail_doppler_config }}"
+      - --no-check-version
   delegate_to: localhost
   become: false
   environment:
-    OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_mail_service_token }}"
-    OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
+    DOPPLER_TOKEN: "{{ proxmox_mail_doppler_token }}"
   register: proxmox_mail_credential_item
   changed_when: false
   check_mode: false
   no_log: true
 
-- name: Read concealed Gmail app password
+- name: Read Gmail app password value
   ansible.builtin.set_fact:
-    proxmox_mail_secret: "{{ (proxmox_mail_credential_item.stdout | from_json).fields | selectattr('id', 'equalto', 'credential') | map(attribute='value') | first | default('') }}"
+    proxmox_mail_secret: "{{ (proxmox_mail_credential_item.stdout | from_json)[proxmox_mail_doppler_secret].computed | default('') }}"
   no_log: true
 
-- name: Require a nonempty 1Password Gmail credential
+- name: Require a nonempty Doppler Gmail credential
   ansible.builtin.assert:
     that: proxmox_mail_secret | trim | length > 0
-    fail_msg: Check the tagged pve-00-gmail-alerts item in the iac vault.
+    fail_msg: Check the GMAIL_APP_PASSWORD secret in Doppler project home-dc-proxmox, config prd.
   no_log: true
 
 - name: Ensure Gmail SASL and CA dependencies are installed

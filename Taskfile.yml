@@ -6,11 +6,6 @@ tasks:
       - task --list
     silent: true
 
-  op-token-save:
-    desc: Securely add or replace the 1Password service-account token in macOS Keychain
-    cmds:
-      - python3 scripts/save-op-token.py
-
   doppler-token-save:
     desc: Securely add or replace the home-dc-proxmox/prd Doppler service token in macOS Keychain
     cmds:
