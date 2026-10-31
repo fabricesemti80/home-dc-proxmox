@@ -18,7 +18,7 @@ The BIOS selects the GT 710 as primary display (`0000:02:00.0`, `boot_vga=1`); t
 
 ## Alerts and local certificate
 
-`pve-00.krapulax.home` is internal-only. Certificate automation is deferred; browsers will continue to warn until a trusted CA or public-domain name is chosen. The [mail setup](docs/mail.md) reads the Gmail app password from a `proxmox`-tagged item in the 1Password `iac` vault to relay queued Proxmox and ZFS/system alerts. Initial Proxmox and local-root mail tests both reached the recipient inbox. The mail role does not change networking or require a reboot.
+`pve-00.krapulax.home` is internal-only. Certificate automation is deferred; browsers will continue to warn until a trusted CA or public-domain name is chosen. The [mail setup](docs/mail.md) reads the Gmail app password from the `GMAIL_APP_PASSWORD` secret in Doppler project `home-dc-proxmox` (config `prd`) to relay queued Proxmox and ZFS/system alerts. Initial Proxmox and local-root mail tests both reached the recipient inbox. The mail role does not change networking or require a reboot.
 
 ## Playbook and roles
 
@@ -28,10 +28,10 @@ The BIOS selects the GT 710 as primary display (`0000:02:00.0`, `boot_vga=1`); t
 2. `roles/proxmox_storage/` — verify the HDD identity, create `slow` ZFS pool if absent, register descriptive Proxmox IDs `local-nvme` and `local-hdd`. Disk WWN, expected serial, pool and storage names are in `defaults/main.yml`. The default `local` ID is never changed.
 3. `roles/proxmox_nfs/` — register NAS template, ISO, and backup exports with Proxmox content restrictions. The backup share is limited to VZDump archives; no PBS datastore is mapped.
 4. `roles/proxmox_gpu_passthrough/` — verifies GPU identity and firmware primary display, enables Intel IOMMU, and prepares selective VFIO binding for the P2000. PCI IDs are in its defaults.
-5. `roles/proxmox_mail/` — configure the existing loopback-only Postfix as a Gmail smarthost, root mail alias, and Proxmox root alert recipient. The app password comes from 1Password; sender and recipient addresses are non-secret defaults.
-6. `roles/proxmox_terraform_credentials/` — create a full-administrator Terraform API identity and store its one-time token in a new 1Password `iac` item on the next apply. See [Terraform credential setup](docs/terraform-credentials.md).
+5. `roles/proxmox_mail/` — configure the existing loopback-only Postfix as a Gmail smarthost, root mail alias, and Proxmox root alert recipient. The app password comes from Doppler; sender and recipient addresses are non-secret defaults.
+6. `roles/proxmox_terraform_credentials/` — create a full-administrator Terraform API identity and store its one-time token in Doppler (`PROXMOX_TOKEN_ID`, `PROXMOX_TOKEN_SECRET`) on the next apply. See [Terraform credential setup](docs/terraform-credentials.md).
 
-Each role owns its tasks and defaults. `site.yml` does not duplicate their implementation. Use `task nfs-plan`/`task nfs-apply` for NFS-only changes; `task plan` previews all roles. The Terraform role is included by default: review its root-equivalent API access before `task apply`. Both 1Password roles use the **same** Keychain-backed service account; the first Terraform apply needs its `iac` **read and write** grants. Replace the old read-only token with `task op-token-save`; see [mail setup](docs/mail.md).
+Each role owns its tasks and defaults. `site.yml` does not duplicate their implementation. Use `task nfs-plan`/`task nfs-apply` for NFS-only changes; `task plan` previews all roles. The Terraform role is included by default: review its root-equivalent API access before `task apply`. Both Doppler roles use the **same** Keychain-backed, config-scoped service token (`home-dc-proxmox/prd`, read/write); save it with `task doppler-token-save`; see [mail setup](docs/mail.md).
 
 ## What Ansible changes
 
@@ -40,12 +40,12 @@ Each role owns its tasks and defaults. `site.yml` does not duplicate their imple
 - Adds `nfs-proxmox-template` (`/proxmox-template`: `vztmpl,images`), `nfs-proxmox-iso` (`/proxmox-iso`: `iso,import,images`), and `nfs-proxmox-backup` (`/proxmox-backup`: `backup` only) from `10.0.40.2`. The ISO share stores boot ISOs and VM/cloud-init images. Existing VZDump archives are preserved and no backup job is scheduled. The separate `/proxmox-pbs-datastore` export is mounted inside the PBS LXC by `home-dc-terraform/scripts/configure-pbs.sh`.
 - Prepares passthrough for the P2000 graphics and audio functions only, without globally blacklisting the GT 710's driver. Changes become active after a separate reboot; no VM is created.
 - Configures queued Gmail smarthost delivery for the existing Proxmox sendmail notification target and ZFS/root system mail. The app password is not shown in diffs; the operator verifies delivery after applying.
-- On the first `task apply`, provisions a root-equivalent, privilege-separated Proxmox Terraform API token and stores the secret in 1Password. Never exposes the token in Ansible output or rotates it on subsequent runs.
+- On the first `task apply`, provisions a root-equivalent, privilege-separated Proxmox Terraform API token and stores the secret in Doppler. Never exposes the token in Ansible output or rotates it on subsequent runs.
 - Never reboots automatically during `task apply`. The separate operator-run `task reboot` uses Ansible's reboot module and waits for Proxmox and SSH to return. No role installs a guest VM, backup jobs, agent, or cluster services.
 
 ## Plan → apply → verify
 
-Requires local Ansible and Task (`task`), working root SSH via the `pve-00` alias, a trusted SSH host key, 1Password CLI, and a service-account token stored via `task op-token-save` in macOS Keychain (see [mail setup](docs/mail.md)). From the repository root:
+Requires local Ansible and Task (`task`), working root SSH via the `pve-00` alias, a trusted SSH host key, the Doppler CLI, and a `home-dc-proxmox/prd` service token stored via `task doppler-token-save` in macOS Keychain (see [mail setup](docs/mail.md)). From the repository root:
 
 ```sh
 ansible-playbook -i inventory site.yml --syntax-check

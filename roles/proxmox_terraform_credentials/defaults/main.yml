@@ -3,7 +3,9 @@ proxmox_terraform_user: terraform@pve
 proxmox_terraform_token_id: provisioning
 proxmox_terraform_role: Administrator
 proxmox_terraform_token_validity_seconds: 31536000
-proxmox_terraform_vault: iac
-proxmox_terraform_item_title: pve-00-terraform-api-token
-# One read/write iac service account handles reads and first-time credential storage.
-proxmox_terraform_service_token: "{{ lookup('env', 'OP_SERVICE_ACCOUNT_TOKEN') or lookup('pipe', 'security find-generic-password -a \"$USER\" -s home-dc-proxmox-op -w') }}"
+proxmox_terraform_doppler_project: home-dc-proxmox
+proxmox_terraform_doppler_config: prd
+proxmox_terraform_doppler_id_name: PROXMOX_TOKEN_ID
+proxmox_terraform_doppler_secret_name: PROXMOX_TOKEN_SECRET
+# A config-scoped Doppler service token with read/write access; resolved on the controller only.
+proxmox_terraform_doppler_token: "{{ lookup('env', 'DOPPLER_TOKEN') or lookup('pipe', 'security find-generic-password -a \"$USER\" -s home-dc-doppler-proxmox -w') }}"

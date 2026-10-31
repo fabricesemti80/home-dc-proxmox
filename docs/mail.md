@@ -2,25 +2,25 @@
 
 The certificate for `pve-00.krapulax.home` is **not** changed. This internal-only name has no publicly trusted CA certificate; browser warnings remain until a CA trusted by the accessing devices or a public-domain DNS-01 name is chosen. No ACME account or DNS-provider credentials are required for this mail setup.
 
-## 1Password credential source
+## Doppler credential source
 
-The Gmail app password is stored as the concealed `credential` field of the `pve-00-gmail-alerts` item in the `iac` vault (tag: `proxmox`). The mail role reads it via `op item get` on the controller, using an **explicit service-account token** from macOS Keychain (or `OP_SERVICE_ACCOUNT_TOKEN` supplied by the controller) with desktop CLI integration disabled. Sender and recipient addresses remain non-secret role defaults. The controller needs `op` CLI v2; the role neither uses `.env` nor asks the desktop app to authorize CLI access.
+The Gmail app password is the `GMAIL_APP_PASSWORD` secret in Doppler project `home-dc-proxmox`, config `prd`. The mail role reads it on the controller with `doppler secrets get GMAIL_APP_PASSWORD --json`, authenticating with an **explicit config-scoped service token** from macOS Keychain (item `home-dc-doppler-proxmox`) or a `DOPPLER_TOKEN` supplied by the controller. It never uses a personal Doppler login. Sender and recipient addresses remain non-secret role defaults. The controller needs the Doppler CLI; the role does not use `.env`.
 
-Each **new** secret created for this Proxmox environment should carry the `proxmox` tag and a host-specific title. Keep other environments' existing items unchanged. Ansible hides the in-memory credential and the resulting Postfix file/diff with `no_log`. A pre-existing local `.env` is not used after this cutover; remove your own ignored copy only after verifying both the check-mode plan and mail delivery. Never print the app password or commit a local credential file.
+Ansible hides the in-memory credential and the resulting Postfix file/diff with `no_log`. A pre-existing local `.env` is not used; remove your own ignored copy only after verifying both the check-mode plan and mail delivery. Never print the app password or commit a local credential file. To rotate it, generate a new Google app password and replace the secret through Doppler's interactive prompt (`doppler secrets set GMAIL_APP_PASSWORD -p home-dc-proxmox -c prd`) rather than as a command-line argument, then rerun the mail role.
 
-### Service-account authentication on macOS
+### Service-token authentication on macOS
 
-One `iac` service account can handle mail reads and the first Terraform credential write. The old Keychain entry `home-dc-proxmox-op` currently holds a **read-only** token; replace its value with the new read/write service-account token you created by running `task op-token-save` locally. Enter the complete new token at its hidden prompt. The task changes only your Mac's Keychain; after verifying the new account, revoke the obsolete read-only account in 1Password.
+Create a **read/write service token** on `home-dc-proxmox` → `prd` (dashboard → Access → Generate; this repo's token is named `ansible-pve-00`), then run `task doppler-token-save` locally and enter the complete token at its hidden prompt. The task refuses personal, CLI and non-`prd` tokens, proves the token can read `home-dc-proxmox/prd`, and only then stores it in your Mac's Keychain. **One token** serves mail reads, config checks and the Terraform credential write.
 
-**Scope tradeoff:** the new token can read and change **every item in `iac`**; the `proxmox` tag does not restrict permissions. A dedicated vault would reduce the blast radius, but you selected the existing `iac` vault. Never send the token to chat, put it in `.env`, or pass it as a shell argument. The `security add-generic-password ... -w` terminal prompt previously truncated a token on this Mac; use `task op-token-save`, which fails if hidden input is unavailable.
+**Scope:** a Doppler service token is limited to one config. This token can read and change every secret in `home-dc-proxmox/prd` (the Gmail app password and the root-equivalent Terraform token) and nothing else in the workplace. Never send it to chat, put it in `.env`, or pass it as a shell argument. The `security add-generic-password ... -w` terminal prompt previously truncated a token on this Mac; use `task doppler-token-save`, which fails if hidden input is unavailable.
 
 Check the stored token without displaying it:
 
 ```sh
-( token=$(security find-generic-password -a "$USER" -s home-dc-proxmox-op -w) && test -n "$token" && OP_SERVICE_ACCOUNT_TOKEN="$token" OP_BIOMETRIC_UNLOCK_ENABLED=false op user get --me )
+( token=$(security find-generic-password -a "$USER" -s home-dc-doppler-proxmox -w) && test -n "$token" && DOPPLER_TOKEN="$token" doppler me --json )
 ```
 
-The result must say `Type: SERVICE_ACCOUNT` and identify your new writer account; plain `op user get --me` uses your personal desktop identity. `task plan` and `task apply` now use this **one** Keychain entry for both roles; all Ansible `op` calls disable desktop CLI integration. A successful plan checks read access, **not write permission**—review the account's `iac` grants before applying. Keychain may still ask to release its item. If an unrelated shell integration calls `op`, inspect **1Password → Developer → View CLI**. Do not enable `OP_CONNECT_HOST` or `OP_CONNECT_TOKEN`, which take precedence over service-account tokens. To remove the local item: `security delete-generic-password -a "$USER" -s home-dc-proxmox-op`. Revoke exposed tokens in 1Password.
+The result must contain `"type": "service_token"`; `"type": "cli"` means a personal login answered instead. `task plan` and `task apply` use this **one** Keychain entry for both roles. A successful plan checks read access, **not write permission**; a read-only token fails at the Terraform write and the role then rolls back. Do not export a `DOPPLER_TOKEN` for another project before running the roles, because it takes precedence over Keychain. To remove the local item: `security delete-generic-password -a "$USER" -s home-dc-doppler-proxmox`. Revoke exposed tokens in the Doppler dashboard (Access tab).
 
 
 This role manages the existing host's loopback-only Postfix service as a Gmail smart host on port 587 with mandatory STARTTLS and SASL. It places the relay password in `/etc/postfix/sasl_passwd` and its indexed map, both mode `0600`; Ansible hides the credential task and map generation with `no_log`. Postfix queues mail during temporary relay outages. It maps the local `root` sender to `automations.fs@gmail.com` for Gmail's sender policy, routes local root mail to `fabrice.semti@gmail.com`, and sets `root@pam`'s Proxmox email to that recipient. It preserves Proxmox's built-in `mail-to-root` sendmail target and `default-matcher` rather than creating a competing notification path. The already-active ZFS event daemon uses `ZED_EMAIL_ADDR="root"`, so its messages follow `/etc/aliases` through Postfix. No network interface, SSH, firewall, storage, GPU, or boot setting is changed.
@@ -29,8 +29,8 @@ TLS policy is `smtp_tls_security_level=secure` with `smtp_tls_secure_cert_match=
 
 ## Operator rollout
 
-1. Store the `iac` service-account token in Keychain with `task op-token-save`; no desktop CLI authorization is needed by the Ansible roles.
-2. Preview with `ansible-playbook -i inventory site.yml --check --diff --tags mail`, then `task plan`. The protected credential file shows no diff. If the token lacks `iac` read access, the role stops before touching host mail settings.
+1. Save the `home-dc-proxmox/prd` service token in Keychain with `task doppler-token-save`; the Ansible roles never use a personal Doppler login.
+2. Preview with `ansible-playbook -i inventory site.yml --check --diff --tags mail`, then `task plan`. The protected credential file shows no diff. If the token cannot read `home-dc-proxmox/prd`, the role stops before touching host mail settings.
 3. Review the full plan (including the default Terraform identity role), then run `task apply` yourself. The mail configuration itself needs no reboot.
 4. Confirm `ssh pve-00 'postfix check; postconf -h relayhost smtp_tls_security_level smtp_sasl_auth_enable; pveum user list --output-format json'`. **Never print** `/etc/postfix/sasl_passwd`, its `.db`, or the app password.
 5. Send a Proxmox notification test using Datacenter → Notifications → `mail-to-root` → Test, and verify delivery to `fabrice.semti@gmail.com`.
