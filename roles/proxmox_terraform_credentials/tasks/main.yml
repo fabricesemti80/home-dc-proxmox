@@ -1,7 +1,7 @@
 ---
 - name: "========== ROLE: TERRAFORM CREDENTIALS =========="
   ansible.builtin.debug:
-    msg: "Provision the single-host Terraform administrator and store its API token in 1Password"
+    msg: "Provision the single-host Terraform administrator and store its API token in Doppler"
 
 - name: Inspect Proxmox API users
   ansible.builtin.command: pveum user list --output-format json
@@ -22,39 +22,40 @@
   changed_when: false
   check_mode: false
 
-# All controller-side op calls use the Keychain-backed service account.
-# A read-only token can plan, but creation requires write_items in iac.
-- name: Inspect destination vault with 1Password CLI
+# All controller-side Doppler calls use the Keychain-backed, config-scoped service token.
+# A read-only token can plan, but creation also needs write access to the config.
+# Precondition: PROXMOX_TOKEN_ID and PROXMOX_TOKEN_SECRET must already be seeded when the
+# host token exists, otherwise the partial-state check below refuses to proceed.
+- name: Inspect Doppler config for stored Terraform credentials
   ansible.builtin.command:
-    argv: [op, item, list, --vault, "{{ proxmox_terraform_vault }}", --format, json]
+    argv: [doppler, secrets, --only-names, --json, --project, "{{ proxmox_terraform_doppler_project }}", --config, "{{ proxmox_terraform_doppler_config }}", --no-check-version]
   delegate_to: localhost
   become: false
   environment:
-    OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
-    OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
-  register: terraform_vault_items
+    DOPPLER_TOKEN: "{{ proxmox_terraform_doppler_token }}"
+  register: terraform_doppler_names
   changed_when: false
   failed_when: false
   check_mode: false
   no_log: true
 
-- name: Require access to the 1Password IaC vault
+- name: Require access to the Doppler config
   ansible.builtin.assert:
-    that: terraform_vault_items.rc | default(1) == 0
-    fail_msg: Store an iac read/write service-account token with task op-token-save, or supply OP_SERVICE_ACCOUNT_TOKEN, then retry.
+    that: terraform_doppler_names.rc | default(1) == 0
+    fail_msg: Store the home-dc-proxmox/prd service token with task doppler-token-save, or supply DOPPLER_TOKEN, then retry.
 
-- name: Locate dedicated host Terraform credential
+- name: Locate stored and host Terraform credentials
   ansible.builtin.set_fact:
-    terraform_vault_matches: "{{ terraform_vault_items.stdout | from_json | selectattr('title', 'equalto', proxmox_terraform_item_title) | list }}"
+    terraform_stored_names: "{{ (terraform_doppler_names.stdout | from_json).keys() | select('in', [proxmox_terraform_doppler_id_name, proxmox_terraform_doppler_secret_name]) | list }}"
     terraform_token_present: "{{ proxmox_terraform_token_id in (terraform_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list) }}"
   no_log: true
 
 - name: Refuse ambiguous or partially provisioned Terraform credentials
   ansible.builtin.assert:
     that:
-      - terraform_vault_matches | length <= 1
-      - (terraform_vault_matches | length == 1) == (terraform_token_present | bool)
-    fail_msg: Terraform token and 1Password item must both exist or both be absent. Reconcile manually; this role never rotates an unknown token.
+      - terraform_stored_names | length in [0, 2]
+      - (terraform_stored_names | length == 2) == (terraform_token_present | bool)
+    fail_msg: Terraform token and both Doppler secrets (PROXMOX_TOKEN_ID and PROXMOX_TOKEN_SECRET) must all exist or all be absent. Reconcile manually; this role never rotates an unknown token.
 
 - name: Refuse a disabled Terraform user or expired API token
   ansible.builtin.assert:
@@ -64,45 +65,35 @@
     fail_msg: Terraform account is disabled or its token has expired; rotate intentionally rather than silently reusing it.
   when: terraform_token_present | bool
 
-- name: Verify existing 1Password item identity
-  ansible.builtin.assert:
-    that:
-      - "'proxmox' in (terraform_vault_matches[0].tags | default([]))"
-      - "terraform_vault_matches[0].vault.id is defined"
-    fail_msg: Existing Terraform item has unexpected metadata; refusing to overwrite it.
-  when: terraform_vault_matches | length == 1
-
-- name: Inspect existing Terraform item fields without printing its secret
+- name: Read stored Terraform credential without printing it
   ansible.builtin.command:
-    argv: [op, item, get, "{{ terraform_vault_matches[0].id }}", --vault, "{{ proxmox_terraform_vault }}", --format, json]
+    argv: [doppler, secrets, get, "{{ proxmox_terraform_doppler_id_name }}", "{{ proxmox_terraform_doppler_secret_name }}", --json, --project, "{{ proxmox_terraform_doppler_project }}", --config, "{{ proxmox_terraform_doppler_config }}", --no-check-version]
   delegate_to: localhost
   become: false
   environment:
-    OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
-    OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
-  register: terraform_existing_item
+    DOPPLER_TOKEN: "{{ proxmox_terraform_doppler_token }}"
+  register: terraform_existing_secrets
   changed_when: false
   check_mode: false
   no_log: true
-  when: terraform_vault_matches | length == 1
+  when: terraform_stored_names | length == 2
 
-- name: Verify existing Terraform item has the expected identity and a secret
+- name: Verify stored Terraform credential has the expected identity and a secret
   ansible.builtin.assert:
     that:
-      - "(terraform_existing_item.stdout | from_json).fields | selectattr('id', 'equalto', 'username') | map(attribute='value') | first == proxmox_terraform_user ~ '!' ~ proxmox_terraform_token_id"
-      - "(terraform_existing_item.stdout | from_json).fields | selectattr('id', 'equalto', 'credential') | map(attribute='value') | first | length > 0"
-    fail_msg: Existing Terraform item is incomplete or for another token; refusing to replace it.
+      - "(terraform_existing_secrets.stdout | from_json)[proxmox_terraform_doppler_id_name].computed == proxmox_terraform_user ~ '!' ~ proxmox_terraform_token_id"
+      - "(terraform_existing_secrets.stdout | from_json)[proxmox_terraform_doppler_secret_name].computed | length > 0"
+    fail_msg: Stored Terraform credential is incomplete or for another token; refusing to replace it.
   no_log: true
-  when: terraform_vault_matches | length == 1
+  when: terraform_stored_names | length == 2
 
-- name: Confirm service-account identity before creating a token
+- name: Confirm Doppler service-token identity before creating a token
   ansible.builtin.command:
-    argv: [op, user, get, --me, --format, json]
+    argv: [doppler, me, --json, --no-check-version]
   delegate_to: localhost
   become: false
   environment:
-    OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
-    OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
+    DOPPLER_TOKEN: "{{ proxmox_terraform_doppler_token }}"
   register: terraform_service_identity
   changed_when: false
   no_log: true
@@ -110,10 +101,10 @@
     - not ansible_check_mode
     - not terraform_token_present | bool
 
-- name: Refuse token creation without a service-account identity
+- name: Refuse token creation without a Doppler service token
   ansible.builtin.assert:
-    that: (terraform_service_identity.stdout | from_json).type == 'SERVICE_ACCOUNT'
-    fail_msg: Save an iac read/write service-account token with task op-token-save before applying.
+    that: (terraform_service_identity.stdout | from_json).type == 'service_token'
+    fail_msg: Save a read/write home-dc-proxmox/prd service token with task doppler-token-save before applying. Personal and CLI tokens are refused.
   when:
     - not ansible_check_mode
     - not terraform_token_present | bool
@@ -155,38 +146,61 @@
       ansible.builtin.command:
         argv: [pveum, acl, modify, /, --tokens, "{{ proxmox_terraform_user }}!{{ proxmox_terraform_token_id }}", --roles, "{{ proxmox_terraform_role }}"]
 
-    - name: Store newly generated token as tagged API credential in 1Password
+    - name: Store Terraform token secret in Doppler
       ansible.builtin.command:
-        argv: [op, item, create, --vault, "{{ proxmox_terraform_vault }}", --tags, proxmox, --format, json, '-']
-        stdin: >-
-          {{ {
-               'category': 'API_CREDENTIAL',
-               'title': proxmox_terraform_item_title,
-               'fields': [
-                 {'id': 'username', 'type': 'STRING', 'label': 'username', 'value': proxmox_terraform_user ~ '!' ~ proxmox_terraform_token_id},
-                 {'id': 'credential', 'type': 'CONCEALED', 'label': 'credential', 'value': (terraform_new_token.stdout | from_json).value}
-               ],
-               'notesPlain': 'pve-00 Terraform API token. Full Administrator ACL on /; protect as root-equivalent.'
-             } | to_json }}
+        argv: [doppler, secrets, set, "{{ proxmox_terraform_doppler_secret_name }}", --project, "{{ proxmox_terraform_doppler_project }}", --config, "{{ proxmox_terraform_doppler_config }}", --no-interactive, --no-check-version]
+        stdin: "{{ (terraform_new_token.stdout | from_json).value }}"
+        stdin_add_newline: false
       delegate_to: localhost
       become: false
       environment:
-        OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
-        OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
-      register: terraform_created_item
+        DOPPLER_TOKEN: "{{ proxmox_terraform_doppler_token }}"
+      no_log: true
+
+    - name: Store Terraform token identifier in Doppler
+      ansible.builtin.command:
+        argv: [doppler, secrets, set, "{{ proxmox_terraform_doppler_id_name }}", --project, "{{ proxmox_terraform_doppler_project }}", --config, "{{ proxmox_terraform_doppler_config }}", --no-interactive, --no-check-version]
+        stdin: "{{ proxmox_terraform_user }}!{{ proxmox_terraform_token_id }}"
+        stdin_add_newline: false
+      delegate_to: localhost
+      become: false
+      environment:
+        DOPPLER_TOKEN: "{{ proxmox_terraform_doppler_token }}"
       no_log: true
 
   rescue:
-    - name: Check whether credential was stored despite an interrupted response
+    - name: Check which credential parts were stored despite an interrupted write
       ansible.builtin.command:
-        argv: [op, item, list, --vault, "{{ proxmox_terraform_vault }}", --format, json]
+        argv: [doppler, secrets, --only-names, --json, --project, "{{ proxmox_terraform_doppler_project }}", --config, "{{ proxmox_terraform_doppler_config }}", --no-check-version]
       delegate_to: localhost
       become: false
       environment:
-        OP_SERVICE_ACCOUNT_TOKEN: "{{ proxmox_terraform_service_token }}"
-        OP_BIOMETRIC_UNLOCK_ENABLED: 'false'
-      register: terraform_recovery_items
+        DOPPLER_TOKEN: "{{ proxmox_terraform_doppler_token }}"
+      register: terraform_recovery_names
       changed_when: false
+      failed_when: false
+      no_log: true
+
+    # A listing failure is ambiguous, so nothing is revoked. Both parts present means the
+    # credential is stored and must not be revoked. Anything less is an unstored credential.
+    - name: Classify stored credential parts after the failure
+      ansible.builtin.set_fact:
+        terraform_recovery_stored: "{{ ((terraform_recovery_names.stdout | from_json).keys() | select('in', [proxmox_terraform_doppler_id_name, proxmox_terraform_doppler_secret_name]) | list) if terraform_recovery_names.rc == 0 else none }}"
+      no_log: true
+
+    - name: Remove a partially stored credential
+      ansible.builtin.command:
+        argv: [doppler, secrets, delete, "{{ item }}", --project, "{{ proxmox_terraform_doppler_project }}", --config, "{{ proxmox_terraform_doppler_config }}", --yes, --no-check-version]
+      delegate_to: localhost
+      become: false
+      environment:
+        DOPPLER_TOKEN: "{{ proxmox_terraform_doppler_token }}"
+      loop: "{{ terraform_recovery_stored or [] }}"
+      when:
+        - terraform_new_token is defined
+        - terraform_new_token is succeeded
+        - terraform_recovery_stored is not none
+        - terraform_recovery_stored | length < 2
       failed_when: false
       no_log: true
 
@@ -196,27 +210,27 @@
       when:
         - terraform_new_token is defined
         - terraform_new_token is succeeded
-        - terraform_recovery_items.rc == 0
-        - terraform_recovery_items.stdout | from_json | selectattr('title', 'equalto', proxmox_terraform_item_title) | list | length == 0
+        - terraform_recovery_stored is not none
+        - terraform_recovery_stored | length < 2
       failed_when: false
 
-    - name: Revoke unarchived Terraform token if vault write failed
+    - name: Revoke unstored Terraform token if Doppler write failed
       ansible.builtin.command:
         argv: [pveum, user, token, delete, "{{ proxmox_terraform_user }}", "{{ proxmox_terraform_token_id }}"]
       when:
         - terraform_new_token is defined
         - terraform_new_token is succeeded
-        - terraform_recovery_items.rc == 0
-        - terraform_recovery_items.stdout | from_json | selectattr('title', 'equalto', proxmox_terraform_item_title) | list | length == 0
+        - terraform_recovery_stored is not none
+        - terraform_recovery_stored | length < 2
       no_log: true
 
     - name: Stop after unsuccessful credential provisioning
       ansible.builtin.fail:
-        msg: Terraform token provisioning did not complete. Inspect token and vault item presence before retrying; a token is never rotated automatically.
+        msg: Terraform token provisioning did not complete. Inspect token and Doppler secret presence before retrying; a token is never rotated automatically.
 
 - name: Explain check-mode token creation
   ansible.builtin.debug:
-    msg: "Check mode: the next task apply will create and store the Terraform token; first replace the old read-only Keychain token with an iac read/write service-account token using task op-token-save."
+    msg: "Check mode: the next task apply will create and store the Terraform token in Doppler; first save a read/write home-dc-proxmox/prd service token with task doppler-token-save."
   when:
     - ansible_check_mode
     - not terraform_token_present | bool

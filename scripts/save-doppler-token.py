@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Prompt for a 1Password service-account token and save it to macOS Keychain."""
+"""Prompt for the home-dc-proxmox/prd Doppler service token and save it to macOS Keychain."""
 
-import base64
-import binascii
 import ctypes
 import getpass
-import json
 import os
-import warnings
+import subprocess
 import sys
+import warnings
 
 
-SERVICE = b"home-dc-proxmox-op"
+SERVICE = b"home-dc-doppler-proxmox"
+PROJECT = "home-dc-proxmox"
+CONFIG = "prd"
+PREFIX = "dp.st.prd."
 SECURITY = ctypes.CDLL("/System/Library/Frameworks/Security.framework/Security")
 CORE_FOUNDATION = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
 SECURITY.SecKeychainFindGenericPassword.argtypes = [
@@ -33,20 +34,45 @@ SECURITY.SecKeychainItemModifyAttributesAndData.restype = ctypes.c_int32
 CORE_FOUNDATION.CFRelease.argtypes = [ctypes.c_void_p]
 
 
+def validate(token):
+    """Return an error string, or None when the token has the expected shape."""
+    if token.startswith(("dp.ct.", "dp.pt.", "dp.sa.", "dp.scim.")):
+        return "personal, CLI, service-account and SCIM tokens are refused; use a config-scoped service token"
+    if not token.startswith(PREFIX):
+        return f"not a {CONFIG} service token (expected prefix {PREFIX})"
+    if len(token) == len(PREFIX) or any(c.isspace() for c in token):
+        return "token is empty after its prefix or contains whitespace"
+    return None
+
+
+def verify(token):
+    """Prove the token reads home-dc-proxmox/prd. The token travels in the environment, never argv."""
+    env = dict(os.environ, DOPPLER_TOKEN=token)
+    try:
+        result = subprocess.run(
+            ["doppler", "secrets", "--only-names", "--project", PROJECT, "--config", CONFIG, "--no-check-version"],
+            env=env, capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"could not run the Doppler CLI: {type(exc).__name__}"
+    if result.returncode != 0:
+        detail = (result.stderr or "").strip().replace(token, "***")
+        return f"Doppler rejected the token for {PROJECT}/{CONFIG}: {detail or 'no detail'}"
+    return None
+
+
 def main():
     account = os.environ["USER"].encode()
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", getpass.GetPassWarning)
-            token = getpass.getpass("1Password service-account token (input hidden): ")
+            token = getpass.getpass(f"Doppler {PROJECT}/{CONFIG} service token (input hidden): ").strip()
     except (getpass.GetPassWarning, EOFError):
         print("Token was not saved: a hidden interactive prompt is required", file=sys.stderr)
         return 1
-    try:
-        if not token.startswith("ops_") or not isinstance(json.loads(base64.b64decode(token[4:], validate=True)), dict):
-            raise ValueError("not a complete 1Password service-account token")
-    except (ValueError, binascii.Error) as exc:
-        print(f"Token was not saved: {exc}", file=sys.stderr)
+    problem = validate(token) or verify(token)
+    if problem:
+        print(f"Token was not saved: {problem}", file=sys.stderr)
         return 1
 
     data = token.encode()
@@ -70,7 +96,7 @@ def main():
     if result != 0:
         print(f"Keychain update failed (OSStatus {result})", file=sys.stderr)
         return 1
-    print("Service-account token saved to Keychain (home-dc-proxmox-op).")
+    print(f"Service token saved to Keychain ({SERVICE.decode()}); it can read {PROJECT}/{CONFIG}.")
     return 0
 
 
