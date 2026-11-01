@@ -170,7 +170,34 @@
     - monitoring_token_present | bool
     - monitoring_acls.stdout | from_json | selectattr('path', 'equalto', '/') | selectattr('ugid', 'equalto', monitoring_token_full_id) | selectattr('roleid', 'equalto', proxmox_monitoring_role) | list | length == 0
 
-- name: Explain check mode
+- name: Plan creation of monitoring user
   ansible.builtin.debug:
-    msg: Check mode does not create the monitoring token. Review and apply the monitoring-credentials role separately.
-  when: ansible_check_mode and not monitoring_token_present | bool
+    msg: Apply will create the dedicated monitoring user.
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - proxmox_monitoring_user not in (monitoring_users.stdout | from_json | map(attribute='userid') | list)
+
+- name: Plan creation of monitoring token
+  ansible.builtin.debug:
+    msg: Apply will create a privilege-separated token and save its one-time secret to Doppler.
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - not monitoring_token_present | bool
+
+- name: Plan missing monitoring user ACL
+  ansible.builtin.debug:
+    msg: Apply will grant the monitoring user PVEAuditor on /.
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - monitoring_acls.stdout | from_json | selectattr('path', 'equalto', '/') | selectattr('ugid', 'equalto', proxmox_monitoring_user) | selectattr('roleid', 'equalto', proxmox_monitoring_role) | list | length == 0
+
+- name: Plan missing monitoring token ACL
+  ansible.builtin.debug:
+    msg: Apply will grant the monitoring token PVEAuditor on /.
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - monitoring_acls.stdout | from_json | selectattr('path', 'equalto', '/') | selectattr('ugid', 'equalto', monitoring_token_full_id) | selectattr('roleid', 'equalto', proxmox_monitoring_role) | list | length == 0
