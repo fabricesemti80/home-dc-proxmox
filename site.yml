@@ -28,3 +28,5 @@
       tags: terraform-credentials
     - role: proxmox_monitoring_credentials
       tags: monitoring-credentials
+    - role: proxmox_hardware_monitoring
+      tags: hardware-monitoring

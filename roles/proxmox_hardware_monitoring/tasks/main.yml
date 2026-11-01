@@ -1,0 +1,205 @@
+---
+- name: Inspect the node exporter service
+  ansible.builtin.command: systemctl is-active prometheus-node-exporter
+  register: hardware_exporter_service
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Inspect port 9100 before provisioning
+  ansible.builtin.command:
+    argv: [ss, -H, -ltn, 'sport = :9100']
+  register: hardware_exporter_listener
+  changed_when: false
+  check_mode: false
+
+- name: Refuse to replace an unrelated listener
+  ansible.builtin.assert:
+    that: hardware_exporter_listener.stdout | trim == '' or hardware_exporter_service.rc == 0
+    fail_msg: Port 9100 is occupied by another service; review before applying.
+
+- name: Inspect existing exporter defaults
+  ansible.builtin.stat:
+    path: /etc/default/prometheus-node-exporter
+  register: hardware_exporter_defaults
+
+- name: Read existing exporter defaults privately
+  ansible.builtin.slurp:
+    src: /etc/default/prometheus-node-exporter
+  register: hardware_exporter_existing_defaults
+  no_log: true
+  when: hardware_exporter_defaults.stat.exists
+
+- name: Refuse to replace an unmanaged exporter configuration
+  ansible.builtin.assert:
+    that:
+      - "'managed by proxmox_hardware_monitoring' in (hardware_exporter_existing_defaults.content | b64decode) or 'ARGS=\"\"' in (hardware_exporter_existing_defaults.content | b64decode)"
+    fail_msg: Existing node-exporter defaults are not managed by this role; review them manually.
+  when: hardware_exporter_defaults.stat.exists
+  no_log: true
+
+- name: Read server identity from Doppler without logging values
+  ansible.builtin.command:
+    argv: [doppler, secrets, get, MONITORING_HW_CA_CERT, MONITORING_HW_SERVER_CERT, MONITORING_HW_SERVER_KEY, --json, --project, "{{ proxmox_hardware_monitoring_doppler_project }}", --config, "{{ proxmox_hardware_monitoring_doppler_config }}", --no-check-version]
+  delegate_to: localhost
+  become: false
+  environment:
+    DOPPLER_TOKEN: "{{ proxmox_hardware_monitoring_doppler_token }}"
+  register: hardware_exporter_doppler
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Require complete hardware exporter TLS material
+  ansible.builtin.assert:
+    that:
+      - "(hardware_exporter_doppler.stdout | from_json)['MONITORING_HW_CA_CERT'].computed | length > 0"
+      - "(hardware_exporter_doppler.stdout | from_json)['MONITORING_HW_SERVER_CERT'].computed | length > 0"
+      - "(hardware_exporter_doppler.stdout | from_json)['MONITORING_HW_SERVER_KEY'].computed | length > 0"
+    fail_msg: Create the dedicated hardware mTLS identities before applying this role.
+  no_log: true
+
+- name: Provision authenticated exporter
+  when: not ansible_check_mode
+  block:
+    - name: Create a temporary root-only TLS validation directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: pve-hardware-tls-
+      register: hardware_tls_temp
+      changed_when: false
+      no_log: true
+
+    - name: Stage TLS material for validation
+      ansible.builtin.copy:
+        content: "{{ (hardware_exporter_doppler.stdout | from_json)[item.key].computed }}"
+        dest: "{{ hardware_tls_temp.path }}/{{ item.file }}"
+        owner: root
+        group: root
+        mode: '0600'
+      loop:
+        - {key: MONITORING_HW_CA_CERT, file: ca.crt}
+        - {key: MONITORING_HW_SERVER_CERT, file: server.crt}
+        - {key: MONITORING_HW_SERVER_KEY, file: server.key}
+      changed_when: false
+      no_log: true
+
+    - name: Verify server certificate chain, purpose and IP address
+      ansible.builtin.command:
+        argv: [openssl, verify, -x509_strict, -purpose, sslserver, -verify_ip, "{{ proxmox_hardware_monitoring_listen_ip }}", -CAfile, "{{ hardware_tls_temp.path }}/ca.crt", "{{ hardware_tls_temp.path }}/server.crt"]
+      changed_when: false
+      no_log: true
+
+    - name: Require a server certificate valid for at least 30 more days
+      ansible.builtin.command:
+        argv: [openssl, x509, -in, "{{ hardware_tls_temp.path }}/server.crt", -noout, -checkend, '2592000']
+      changed_when: false
+      no_log: true
+
+    - name: Read server certificate identity and public key
+      ansible.builtin.command:
+        argv: [openssl, x509, -in, "{{ hardware_tls_temp.path }}/server.crt", -noout, -text, -pubkey]
+      register: hardware_server_certificate
+      changed_when: false
+      no_log: true
+
+    - name: Read server private-key public component
+      ansible.builtin.command:
+        argv: [openssl, pkey, -in, "{{ hardware_tls_temp.path }}/server.key", -pubout]
+      register: hardware_server_key_public
+      changed_when: false
+      no_log: true
+
+    - name: Verify the server certificate and private key match
+      ansible.builtin.assert:
+        that:
+          - "hardware_server_key_public.stdout | trim in hardware_server_certificate.stdout"
+        fail_msg: Hardware exporter certificate does not match the private key.
+      no_log: true
+
+    - name: Install node exporter without starting an unsecured service
+      ansible.builtin.apt:
+        name: prometheus-node-exporter
+        state: present
+        policy_rc_d: 101
+
+    - name: Create protected exporter TLS directory
+      ansible.builtin.file:
+        path: /etc/prometheus-node-exporter
+        state: directory
+        owner: root
+        group: prometheus
+        mode: '0750'
+
+    - name: Install validated exporter TLS material
+      ansible.builtin.copy:
+        remote_src: true
+        src: "{{ hardware_tls_temp.path }}/{{ item }}"
+        dest: "/etc/prometheus-node-exporter/{{ item }}"
+        owner: root
+        group: prometheus
+        mode: '0640'
+      loop: [ca.crt, server.crt, server.key]
+      notify: Restart PVE hardware exporter
+      no_log: true
+
+    - name: Configure exporter mutual TLS
+      ansible.builtin.copy:
+        dest: /etc/prometheus-node-exporter/web.yml
+        owner: root
+        group: prometheus
+        mode: '0640'
+        content: |
+          tls_server_config:
+            cert_file: /etc/prometheus-node-exporter/server.crt
+            key_file: /etc/prometheus-node-exporter/server.key
+            client_auth_type: RequireAndVerifyClientCert
+            client_ca_file: /etc/prometheus-node-exporter/ca.crt
+      notify: Restart PVE hardware exporter
+
+    - name: Configure the exporter private listener
+      ansible.builtin.copy:
+        dest: /etc/default/prometheus-node-exporter
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # managed by proxmox_hardware_monitoring
+          ARGS="--web.listen-address={{ proxmox_hardware_monitoring_listen_ip }}:{{ proxmox_hardware_monitoring_port }} --web.config.file=/etc/prometheus-node-exporter/web.yml --collector.textfile.directory=/var/lib/prometheus/node-exporter"
+      notify: Restart PVE hardware exporter
+
+    - name: Read server certificate expiry timestamp
+      ansible.builtin.command:
+        argv: [python3, -c, 'import ssl,sys; print(int(ssl.cert_time_to_seconds(ssl._ssl._test_decode_cert(sys.argv[1])["notAfter"])))', /etc/prometheus-node-exporter/server.crt]
+      register: hardware_certificate_expiry
+      changed_when: false
+
+    - name: Publish exporter certificate expiry metric
+      ansible.builtin.copy:
+        dest: /var/lib/prometheus/node-exporter/hardware_tls.prom
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # HELP pve_hardware_tls_certificate_not_after_seconds PVE hardware exporter TLS certificate expiration time.
+          # TYPE pve_hardware_tls_certificate_not_after_seconds gauge
+          pve_hardware_tls_certificate_not_after_seconds {{ hardware_certificate_expiry.stdout }}
+
+    - name: Enable authenticated exporter service
+      ansible.builtin.systemd_service:
+        name: prometheus-node-exporter
+        enabled: true
+        state: started
+  always:
+    - name: Remove temporary TLS validation files
+      ansible.builtin.file:
+        path: "{{ hardware_tls_temp.path }}"
+        state: absent
+      when: hardware_tls_temp.path is defined
+      changed_when: false
+      no_log: true
+
+- name: Explain check mode
+  ansible.builtin.debug:
+    msg: Check mode validates secret presence and port ownership; applying validates certificates before package installation.
+  when: ansible_check_mode
