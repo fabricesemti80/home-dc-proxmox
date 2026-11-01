@@ -84,9 +84,9 @@
       changed_when: false
       no_log: true
 
-    - name: Verify server certificate chain and server purpose
+    - name: Verify server certificate chain, purpose and IP address
       ansible.builtin.command:
-        argv: [openssl, verify, -x509_strict, -purpose, sslserver, -CAfile, "{{ hardware_tls_temp.path }}/ca.crt", "{{ hardware_tls_temp.path }}/server.crt"]
+        argv: [openssl, verify, -x509_strict, -purpose, sslserver, -verify_ip, "{{ proxmox_hardware_monitoring_listen_ip }}", -CAfile, "{{ hardware_tls_temp.path }}/ca.crt", "{{ hardware_tls_temp.path }}/server.crt"]
       changed_when: false
       no_log: true
 
@@ -110,12 +110,11 @@
       changed_when: false
       no_log: true
 
-    - name: Verify the server identity and key match
+    - name: Verify the server certificate and private key match
       ansible.builtin.assert:
         that:
-          - "'IP Address:' ~ proxmox_hardware_monitoring_listen_ip in hardware_server_certificate.stdout"
           - "hardware_server_key_public.stdout | trim in hardware_server_certificate.stdout"
-        fail_msg: Hardware exporter certificate does not match the configured IP or private key.
+        fail_msg: Hardware exporter certificate does not match the private key.
       no_log: true
 
     - name: Install node exporter without starting an unsecured service
