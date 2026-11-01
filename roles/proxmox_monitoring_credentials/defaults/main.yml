@@ -1,0 +1,10 @@
+---
+proxmox_monitoring_user: prometheus@pve
+proxmox_monitoring_token_id: victoriametrics
+proxmox_monitoring_role: PVEAuditor
+proxmox_monitoring_token_validity_seconds: 31536000
+proxmox_monitoring_doppler_project: home-dc-proxmox
+proxmox_monitoring_doppler_config: prd
+proxmox_monitoring_doppler_id_name: PVE_MONITORING_TOKEN_ID
+proxmox_monitoring_doppler_secret_name: PVE_MONITORING_TOKEN_SECRET
+proxmox_monitoring_doppler_token: "{{ lookup('env', 'DOPPLER_TOKEN') or lookup('pipe', 'security find-generic-password -a \"$USER\" -s home-dc-doppler-proxmox -w') }}"

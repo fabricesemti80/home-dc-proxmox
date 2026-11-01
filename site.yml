@@ -26,3 +26,5 @@
       tags: mail
     - role: proxmox_terraform_credentials
       tags: terraform-credentials
+    - role: proxmox_monitoring_credentials
+      tags: monitoring-credentials

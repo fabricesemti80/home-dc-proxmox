@@ -25,6 +25,16 @@ tasks:
     cmds:
       - ansible-playbook -i inventory site.yml --tags nfs
 
+  monitoring-credentials-plan:
+    desc: Preview the read-only PVE monitoring credential without creating a token
+    cmds:
+      - ansible-playbook -i inventory site.yml --check --diff --tags monitoring-credentials
+
+  monitoring-credentials-apply:
+    desc: Provision the read-only PVE monitoring credential and store it in Doppler
+    cmds:
+      - ansible-playbook -i inventory site.yml --tags monitoring-credentials
+
 
   apply:
     desc: Apply standalone PVE host configuration (operator initiated)

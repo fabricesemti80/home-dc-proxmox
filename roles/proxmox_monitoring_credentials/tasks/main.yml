@@ -1,0 +1,203 @@
+---
+- name: Refuse elevated monitoring role
+  ansible.builtin.assert:
+    that: proxmox_monitoring_role == 'PVEAuditor'
+    fail_msg: The monitoring identity is restricted to PVEAuditor.
+
+- name: Inspect Proxmox users
+  ansible.builtin.command: pveum user list --output-format json
+  register: monitoring_users
+  changed_when: false
+  check_mode: false
+
+- name: Inspect monitoring tokens when the user exists
+  ansible.builtin.command:
+    argv: [pveum, user, token, list, "{{ proxmox_monitoring_user }}", --output-format, json]
+  register: monitoring_tokens
+  changed_when: false
+  check_mode: false
+  when: proxmox_monitoring_user in (monitoring_users.stdout | from_json | map(attribute='userid') | list)
+
+- name: Inspect Proxmox ACLs
+  ansible.builtin.command: pveum acl list --output-format json
+  register: monitoring_acls
+  changed_when: false
+  check_mode: false
+
+- name: Inspect stored monitoring credential names
+  ansible.builtin.command:
+    argv: [doppler, secrets, --only-names, --json, --project, "{{ proxmox_monitoring_doppler_project }}", --config, "{{ proxmox_monitoring_doppler_config }}", --no-check-version]
+  delegate_to: localhost
+  become: false
+  environment:
+    DOPPLER_TOKEN: "{{ proxmox_monitoring_doppler_token }}"
+  register: monitoring_doppler_names
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Determine monitoring credential state
+  ansible.builtin.set_fact:
+    monitoring_stored_names: "{{ (monitoring_doppler_names.stdout | from_json).keys() | select('in', [proxmox_monitoring_doppler_id_name, proxmox_monitoring_doppler_secret_name]) | list }}"
+    monitoring_token_present: "{{ proxmox_monitoring_token_id in (monitoring_tokens.stdout | default('[]') | from_json | map(attribute='tokenid') | list) }}"
+    monitoring_token_full_id: "{{ proxmox_monitoring_user }}!{{ proxmox_monitoring_token_id }}"
+  no_log: true
+
+- name: Refuse partial or ambiguous credential state
+  ansible.builtin.assert:
+    that:
+      - monitoring_stored_names | length in [0, 2]
+      - (monitoring_stored_names | length == 2) == (monitoring_token_present | bool)
+    fail_msg: Host token and both Doppler values must all exist or all be absent. Inspect and recover manually; no token is rotated automatically.
+
+- name: Refuse unrelated direct monitoring ACLs
+  ansible.builtin.assert:
+    that:
+      - item.roleid == proxmox_monitoring_role
+      - item.path == '/'
+    fail_msg: An unexpected direct ACL exists for the monitoring identity; review it before applying.
+  loop: "{{ monitoring_acls.stdout | from_json | selectattr('ugid', 'in', [proxmox_monitoring_user, monitoring_token_full_id]) | list }}"
+  loop_control:
+    label: "{{ item.ugid }} {{ item.path }} {{ item.roleid }}"
+
+- name: Require an enabled user and unexpired privilege-separated existing token
+  ansible.builtin.assert:
+    that:
+      - "(monitoring_users.stdout | from_json | selectattr('userid', 'equalto', proxmox_monitoring_user) | first).enable | int == 1"
+      - "(monitoring_tokens.stdout | from_json | selectattr('tokenid', 'equalto', proxmox_monitoring_token_id) | first).privsep | int == 1"
+      - "(monitoring_tokens.stdout | from_json | selectattr('tokenid', 'equalto', proxmox_monitoring_token_id) | first).expire | int > ansible_facts['date_time']['epoch'] | int"
+    fail_msg: Monitoring identity is disabled, expired, or not privilege separated; rotate or repair it deliberately.
+  when: monitoring_token_present | bool
+
+- name: Inspect stored credential privately
+  ansible.builtin.command:
+    argv: [doppler, secrets, get, "{{ proxmox_monitoring_doppler_id_name }}", "{{ proxmox_monitoring_doppler_secret_name }}", --json, --project, "{{ proxmox_monitoring_doppler_project }}", --config, "{{ proxmox_monitoring_doppler_config }}", --no-check-version]
+  delegate_to: localhost
+  become: false
+  environment:
+    DOPPLER_TOKEN: "{{ proxmox_monitoring_doppler_token }}"
+  register: monitoring_existing_secrets
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: monitoring_token_present | bool
+
+- name: Check stored credential identity privately
+  ansible.builtin.assert:
+    that:
+      - "(monitoring_existing_secrets.stdout | from_json)[proxmox_monitoring_doppler_id_name].computed == monitoring_token_full_id"
+      - "(monitoring_existing_secrets.stdout | from_json)[proxmox_monitoring_doppler_secret_name].computed | length > 0"
+    fail_msg: The stored monitoring credential does not match the host token.
+  no_log: true
+  when: monitoring_token_present | bool
+
+- name: Check Doppler service-token identity before provisioning
+  ansible.builtin.command:
+    argv: [doppler, me, --json, --no-check-version]
+  delegate_to: localhost
+  become: false
+  environment:
+    DOPPLER_TOKEN: "{{ proxmox_monitoring_doppler_token }}"
+  register: monitoring_service_identity
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode and not monitoring_token_present | bool
+
+- name: Require a scoped Doppler service token for provisioning
+  ansible.builtin.assert:
+    that: (monitoring_service_identity.stdout | from_json).type == 'service_token'
+    fail_msg: Save a read/write home-dc-proxmox/prd service token with task doppler-token-save.
+  when: not ansible_check_mode and not monitoring_token_present | bool
+
+- name: Create dedicated monitoring user without a password
+  ansible.builtin.command:
+    argv: [pveum, user, add, "{{ proxmox_monitoring_user }}", --comment, "Read-only monitoring API token"]
+  when:
+    - not ansible_check_mode
+    - proxmox_monitoring_user not in (monitoring_users.stdout | from_json | map(attribute='userid') | list)
+
+- name: Grant the monitoring user read-only access
+  ansible.builtin.command:
+    argv: [pveum, acl, modify, /, --users, "{{ proxmox_monitoring_user }}", --roles, "{{ proxmox_monitoring_role }}"]
+  when:
+    - not ansible_check_mode
+    - monitoring_acls.stdout | from_json | selectattr('path', 'equalto', '/') | selectattr('ugid', 'equalto', proxmox_monitoring_user) | selectattr('roleid', 'equalto', proxmox_monitoring_role) | list | length == 0
+
+- name: Create monitoring token and store its one-time secret
+  when: not ansible_check_mode and not monitoring_token_present | bool
+  block:
+    - name: Create privilege-separated monitoring token
+      ansible.builtin.command:
+        argv: [pveum, user, token, add, "{{ proxmox_monitoring_user }}", "{{ proxmox_monitoring_token_id }}", --privsep, '1', --expire, "{{ ansible_facts['date_time']['epoch'] | int + proxmox_monitoring_token_validity_seconds }}", --output-format, json]
+      register: monitoring_new_token
+      no_log: true
+
+    - name: Grant the token read-only access
+      ansible.builtin.command:
+        argv: [pveum, acl, modify, /, --tokens, "{{ monitoring_token_full_id }}", --roles, "{{ proxmox_monitoring_role }}"]
+
+    - name: Store the token secret without process arguments
+      ansible.builtin.command:
+        argv: [doppler, secrets, set, "{{ proxmox_monitoring_doppler_secret_name }}", --project, "{{ proxmox_monitoring_doppler_project }}", --config, "{{ proxmox_monitoring_doppler_config }}", --no-interactive, --no-check-version]
+        stdin: "{{ (monitoring_new_token.stdout | from_json).value }}"
+        stdin_add_newline: false
+      delegate_to: localhost
+      become: false
+      environment:
+        DOPPLER_TOKEN: "{{ proxmox_monitoring_doppler_token }}"
+      no_log: true
+
+    - name: Store the token identifier
+      ansible.builtin.command:
+        argv: [doppler, secrets, set, "{{ proxmox_monitoring_doppler_id_name }}", --project, "{{ proxmox_monitoring_doppler_project }}", --config, "{{ proxmox_monitoring_doppler_config }}", --no-interactive, --no-check-version]
+        stdin: "{{ monitoring_token_full_id }}"
+        stdin_add_newline: false
+      delegate_to: localhost
+      become: false
+      environment:
+        DOPPLER_TOKEN: "{{ proxmox_monitoring_doppler_token }}"
+      no_log: true
+  rescue:
+    - name: Stop on incomplete provisioning
+      ansible.builtin.fail:
+        msg: Monitoring token provisioning failed. Inspect token and Doppler secret presence and recover manually before retrying; credentials are never silently rotated.
+
+- name: Restore missing read-only token ACL
+  ansible.builtin.command:
+    argv: [pveum, acl, modify, /, --tokens, "{{ monitoring_token_full_id }}", --roles, "{{ proxmox_monitoring_role }}"]
+  when:
+    - not ansible_check_mode
+    - monitoring_token_present | bool
+    - monitoring_acls.stdout | from_json | selectattr('path', 'equalto', '/') | selectattr('ugid', 'equalto', monitoring_token_full_id) | selectattr('roleid', 'equalto', proxmox_monitoring_role) | list | length == 0
+
+- name: Plan creation of monitoring user
+  ansible.builtin.debug:
+    msg: Apply will create the dedicated monitoring user.
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - proxmox_monitoring_user not in (monitoring_users.stdout | from_json | map(attribute='userid') | list)
+
+- name: Plan creation of monitoring token
+  ansible.builtin.debug:
+    msg: Apply will create a privilege-separated token and save its one-time secret to Doppler.
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - not monitoring_token_present | bool
+
+- name: Plan missing monitoring user ACL
+  ansible.builtin.debug:
+    msg: Apply will grant the monitoring user PVEAuditor on /.
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - monitoring_acls.stdout | from_json | selectattr('path', 'equalto', '/') | selectattr('ugid', 'equalto', proxmox_monitoring_user) | selectattr('roleid', 'equalto', proxmox_monitoring_role) | list | length == 0
+
+- name: Plan missing monitoring token ACL
+  ansible.builtin.debug:
+    msg: Apply will grant the monitoring token PVEAuditor on /.
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - monitoring_acls.stdout | from_json | selectattr('path', 'equalto', '/') | selectattr('ugid', 'equalto', monitoring_token_full_id) | selectattr('roleid', 'equalto', proxmox_monitoring_role) | list | length == 0
