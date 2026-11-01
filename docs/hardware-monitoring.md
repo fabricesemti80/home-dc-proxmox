@@ -1,0 +1,13 @@
+# PVE host hardware metrics
+
+Decision: run Debian's packaged Prometheus node-exporter on `pve-00` to expose host CPU, memory, filesystem, ZFS and hwmon sensors. The PVE API's audit endpoints cover SMART disk health and pool status but do not expose the `coretemp` and `dell_smm` sensors observed on this host. Node-exporter is unprivileged and does not invoke SMART commands or modify storage.
+
+The listener binds only `10.0.40.10:9100` and requires TLS client certificates signed by a dedicated monitoring CA. The server certificate/key and client CA are provisioned from `home-dc-proxmox/prd` Doppler using the existing controller-side scoped service token. The infra-cluster vmagent receives a separate client certificate/key and the public CA through `home-dc-kubernetes/infra`; no private CA key is retained. Run `task monitoring:pve-hardware-pki-check` and, if all identities are absent, `task monitoring:pve-hardware-pki-create` in `home-dc-kubernetes` before applying this role. The host role fails before package installation if identity material is absent or invalid; package service auto-start is disabled until TLS and the managed service defaults are in place.
+
+Assumptions: the Debian 13 package path and service name are valid on Proxmox VE 9, the PVE network address remains `10.0.40.10`, and the monitoring client connects from the private network. A dedicated CA limits trust to this endpoint, but any client holding a valid client key can read all exported host metrics. Keep the key scoped to monitoring and do not publish this listener to the internet.
+
+## Validation and lifecycle
+
+Review `task hardware-monitoring-plan`, then apply with `task hardware-monitoring-apply`. Verify the service is running unprivileged, only the intended address is listening, a TLS connection without a client certificate is rejected, and the infra client can scrape hwmon and ZFS metrics with certificate verification enabled. A repeated apply must report no changes. Test certificate rotation in a maintenance window: generate a new CA and both leaf identities, update both Doppler scopes and the host configuration together, restart the service, and confirm both authorized and unauthorized connection behavior. Certificates expire after one year; monitor expiry and rotate before the warning period.
+
+Rollback: stop and disable only the dedicated node-exporter service, remove its role-owned TLS configuration, and restore the package's `/etc/default/prometheus-node-exporter` if the package remains installed. Revert the role. Do not change ZFS pools, disks, backup data or unrelated PVE services. Retain existing monitoring credentials until their consumers have been retired or rotated deliberately.

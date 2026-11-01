@@ -31,6 +31,7 @@ The BIOS selects the GT 710 as primary display (`0000:02:00.0`, `boot_vga=1`); t
 5. `roles/proxmox_mail/` — configure the existing loopback-only Postfix as a Gmail smarthost, root mail alias, and Proxmox root alert recipient. The app password comes from Doppler; sender and recipient addresses are non-secret defaults.
 6. `roles/proxmox_terraform_credentials/` — create a full-administrator Terraform API identity and store its one-time token in Doppler (`PROXMOX_TOKEN_ID`, `PROXMOX_TOKEN_SECRET`) on the next apply. See [Terraform credential setup](docs/terraform-credentials.md).
 7. `roles/proxmox_monitoring_credentials/` — provision a privilege-separated, read-only monitoring token and store it in Doppler. See [monitoring credential setup](docs/monitoring-credentials.md).
+8. `roles/proxmox_hardware_monitoring/` — install an unprivileged host metrics exporter restricted by mutual TLS. See [hardware monitoring](docs/hardware-monitoring.md).
 
 Each role owns its tasks and defaults. `site.yml` does not duplicate their implementation. Use `task nfs-plan`/`task nfs-apply` for NFS-only changes and `task monitoring-credentials-plan`/`task monitoring-credentials-apply` for the monitoring identity; `task plan` previews all roles. The Terraform role is included by default: review its root-equivalent API access before `task apply`. Doppler-backed roles use the same Keychain-backed, config-scoped service token (`home-dc-proxmox/prd`, read/write); save it with `task doppler-token-save`; see [mail setup](docs/mail.md).
 
@@ -43,7 +44,7 @@ Each role owns its tasks and defaults. `site.yml` does not duplicate their imple
 - Configures queued Gmail smarthost delivery for the existing Proxmox sendmail notification target and ZFS/root system mail. The app password is not shown in diffs; the operator verifies delivery after applying.
 - On the first `task apply`, provisions a root-equivalent, privilege-separated Proxmox Terraform API token and stores the secret in Doppler. Never exposes the token in Ansible output or rotates it on subsequent runs.
 - Provisions a separate read-only, privilege-separated PVE monitoring token; see [monitoring credentials](docs/monitoring-credentials.md) for validation and rotation.
-- Never reboots automatically during `task apply`. The separate operator-run `task reboot` uses Ansible's reboot module and waits for Proxmox and SSH to return. No role installs a guest VM, backup jobs, agent, or cluster services.
+- Never reboots automatically during `task apply`. The separate operator-run `task reboot` uses Ansible's reboot module and waits for Proxmox and SSH to return. No role installs a guest VM, backup jobs or cluster services.
 
 ## Plan → apply → verify
 

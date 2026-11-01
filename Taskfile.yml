@@ -35,6 +35,16 @@ tasks:
     cmds:
       - ansible-playbook -i inventory site.yml --tags monitoring-credentials
 
+  hardware-monitoring-plan:
+    desc: Preview the authenticated PVE host metrics exporter
+    cmds:
+      - ansible-playbook -i inventory site.yml --check --diff --tags hardware-monitoring
+
+  hardware-monitoring-apply:
+    desc: Install and configure the authenticated PVE host metrics exporter
+    cmds:
+      - ansible-playbook -i inventory site.yml --tags hardware-monitoring
+
 
   apply:
     desc: Apply standalone PVE host configuration (operator initiated)

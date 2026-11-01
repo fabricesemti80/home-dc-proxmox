@@ -1,0 +1,6 @@
+---
+proxmox_hardware_monitoring_listen_ip: 10.0.40.10
+proxmox_hardware_monitoring_port: 9100
+proxmox_hardware_monitoring_doppler_project: home-dc-proxmox
+proxmox_hardware_monitoring_doppler_config: prd
+proxmox_hardware_monitoring_doppler_token: "{{ lookup('env', 'DOPPLER_TOKEN') or lookup('pipe', 'security find-generic-password -a \"$USER\" -s home-dc-doppler-proxmox -w') }}"
