@@ -39,7 +39,10 @@ The service token is held in the operator's macOS Keychain and saved with `task 
 | --- | --- | --- | --- |
 | `DOPPLER_TOKEN` | Role defaults of `proxmox_mail`, `proxmox_terraform_credentials`, `proxmox_monitoring_credentials`, `proxmox_hardware_monitoring` | Optional override; otherwise read from the Keychain item above | Doppler service token. Passed to `doppler` through the environment, never argv. |
 | `USER` | Role defaults, `scripts/save-doppler-token.py` | Shell | Keychain account name. |
-| `ANSIBLE_REMOTE_USER`, `ANSIBLE_PRIVATE_KEY_FILE` | `standalone/controller.py` | Operator shell (optional) | The only `ANSIBLE_*` variables the separate standalone controller passes through. It sets every other `ANSIBLE_*` itself. |
+| `ANSIBLE_REMOTE_USER`, `ANSIBLE_PRIVATE_KEY_FILE` | `standalone/controller.py` | Operator shell (optional) | The only inherited `ANSIBLE_*` variables the standalone controller passes through. It **removes** every other inherited `ANSIBLE_*` variable before running `ansible-playbook`. |
+| `ANSIBLE_CONFIG`, `ANSIBLE_ROLES_PATH`, `ANSIBLE_LIBRARY`, `ANSIBLE_MODULE_UTILS` | `ansible-playbook` (child of `standalone/controller.py`) | Written by the controller, pointing at `standalone/` | Pins config, roles, modules and module utils to the isolated standalone component. |
+| `ANSIBLE_VARS_ENABLED` (`''`), `ANSIBLE_INVENTORY_ENABLED` (`yaml`), `ANSIBLE_FACT_CACHING` (`memory`) | `ansible-playbook` (child of the controller) | Written by the controller | Disables vars plugins, allows only the generated YAML inventory, and keeps facts in memory, so no host data is cached to disk. |
+| `ANSIBLE_HOST_KEY_CHECKING` (`True`) | `ansible-playbook` (child of the controller) | Written by the controller | Forces SSH host-key verification for standalone runs. |
 | `PROXMOX_PYTHON` | `scripts/standalone-host.sh` | Operator shell (optional, defaults to `python3`) | Absolute interpreter for the isolated standalone controller; its `bin/` also supplies `ansible-playbook`. |
 | `DEBIAN_FRONTEND` | `standalone/library/standalone_host.py` | Set to `noninteractive` by the module | Non-interactive APT on the host. |
 
