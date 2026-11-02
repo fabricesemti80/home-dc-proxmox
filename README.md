@@ -46,6 +46,10 @@ Each role owns its tasks and defaults. `site.yml` does not duplicate their imple
 - Provisions a separate read-only, privilege-separated PVE monitoring token; see [monitoring credentials](docs/monitoring-credentials.md) for validation and rotation.
 - Never reboots automatically during `task apply`. The separate operator-run `task reboot` uses Ansible's reboot module and waits for Proxmox and SSH to return. No role installs a guest VM, backup jobs or cluster services.
 
+## Secrets and environment variables
+
+Every Doppler secret, local credential and environment variable used by this repository is listed in [docs/secrets-and-env-vars.md](docs/secrets-and-env-vars.md).
+
 ## Plan → apply → verify
 
 Requires local Ansible and Task (`task`), working root SSH via the `pve-00` alias, a trusted SSH host key, the Doppler CLI, and a `home-dc-proxmox/prd` service token stored via `task doppler-token-save` in macOS Keychain (see [mail setup](docs/mail.md)). From the repository root:
