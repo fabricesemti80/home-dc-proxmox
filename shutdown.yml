@@ -1,0 +1,16 @@
+---
+- name: Shut down standalone Proxmox host
+  hosts: pve
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Require the standalone Proxmox host
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['hostname'] == 'pve-00'
+          - ansible_facts['distribution'] == 'Debian'
+          - ansible_facts['distribution_major_version'] == '13'
+          - ansible_facts['architecture'] == 'x86_64'
+        fail_msg: This shutdown playbook only targets the standalone Proxmox VE 9 host.
+  roles:
+    - role: proxmox_shutdown

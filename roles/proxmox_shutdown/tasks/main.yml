@@ -1,0 +1,76 @@
+---
+- name: Read registered Proxmox guests
+  ansible.builtin.command:
+    argv:
+      - pvesh
+      - get
+      - /cluster/resources
+      - --type
+      - vm
+      - --output-format
+      - json
+  register: proxmox_shutdown_guest_inventory
+  changed_when: false
+  check_mode: false
+
+- name: Select guests that are currently running
+  ansible.builtin.set_fact:
+    proxmox_shutdown_running_guests: >-
+      {{ proxmox_shutdown_guest_inventory.stdout | from_json
+         | selectattr('status', 'equalto', 'running') | list }}
+
+- name: Report guests targeted by this shutdown
+  ansible.builtin.debug:
+    msg: >-
+      Active guests: {{ proxmox_shutdown_running_guests | map(attribute='id') | list }}.
+      The shutdown action stops guests one at a time and powers off the host only
+      after Proxmox reports no running guests.
+
+- name: Gracefully stop all running VMs and containers
+  ansible.builtin.command:
+    argv:
+      - pvenode
+      - stopall
+      - --timeout
+      - "{{ proxmox_shutdown_timeout | string }}"
+      - --force-stop
+      - "0"
+      - --max-workers
+      - "1"
+  when:
+    - not ansible_check_mode
+    - proxmox_shutdown_running_guests | length > 0
+
+- name: Recheck registered guests before powering off
+  ansible.builtin.command:
+    argv:
+      - pvesh
+      - get
+      - /cluster/resources
+      - --type
+      - vm
+      - --output-format
+      - json
+  register: proxmox_shutdown_final_inventory
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+
+- name: Require all VMs and containers to be stopped
+  ansible.builtin.assert:
+    that:
+      - (proxmox_shutdown_final_inventory.stdout | from_json
+         | selectattr('status', 'equalto', 'running') | list | length) == 0
+    fail_msg: At least one VM or container is still running; leaving the host powered on.
+    success_msg: No VMs or containers are running; host poweroff is safe to request.
+  when: not ansible_check_mode
+
+- name: Power off the Proxmox host
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - poweroff
+  async: 1
+  poll: 0
+  changed_when: true
+  when: not ansible_check_mode

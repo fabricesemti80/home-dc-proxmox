@@ -55,3 +55,13 @@ tasks:
     desc: Reboot standalone host and wait for Proxmox and SSH to return
     cmds:
       - ansible-playbook -i inventory reboot.yml
+
+  shutdown-plan:
+    desc: List running guests that shutdown would stop; make no changes
+    cmds:
+      - ansible-playbook -i inventory shutdown.yml --check
+
+  shutdown:
+    desc: Gracefully stop all Proxmox guests, then power off the host
+    cmds:
+      - ansible-playbook -i inventory shutdown.yml
