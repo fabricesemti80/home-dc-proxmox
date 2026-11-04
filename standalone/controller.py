@@ -65,6 +65,7 @@ def main():
     # Allow connection identity only, no arbitrary ANSIBLE_* plugin/config overrides.
     identity = {'ANSIBLE_REMOTE_USER', 'ANSIBLE_PRIVATE_KEY_FILE'}
     env = {k: v for k, v in os.environ.items() if not k.startswith('ANSIBLE_') or k in identity}
+    env.setdefault('ANSIBLE_REMOTE_USER', 'root')
     env.update(ANSIBLE_CONFIG=str(root / 'ansible.cfg'), ANSIBLE_ROLES_PATH=str(root / 'roles'), ANSIBLE_LIBRARY=str(root / 'library'), ANSIBLE_MODULE_UTILS=str(root / 'module_utils'), ANSIBLE_VARS_ENABLED='', ANSIBLE_HOST_KEY_CHECKING='True', ANSIBLE_INVENTORY_ENABLED='yaml', ANSIBLE_FACT_CACHING='memory')
     playbook = 'reboot.yml' if args.action == 'reboot' else 'host.yml'
     with tempfile.TemporaryDirectory(prefix='standalone-pve-') as tmp:
