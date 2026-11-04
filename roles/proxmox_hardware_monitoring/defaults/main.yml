@@ -4,3 +4,6 @@ proxmox_hardware_monitoring_port: 9100
 proxmox_hardware_monitoring_doppler_project: home-dc-proxmox
 proxmox_hardware_monitoring_doppler_config: prd
 proxmox_hardware_monitoring_doppler_token: "{{ lookup('env', 'DOPPLER_TOKEN') or lookup('pipe', 'security find-generic-password -a \"$USER\" -s home-dc-doppler-proxmox -w') }}"
+proxmox_hardware_monitoring_smart_timers:
+  - prometheus-node-exporter-smartmon.timer
+  - prometheus-node-exporter-nvme.timer
