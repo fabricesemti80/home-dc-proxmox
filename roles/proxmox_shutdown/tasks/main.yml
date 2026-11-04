@@ -13,20 +13,41 @@
   changed_when: false
   check_mode: false
 
-- name: Select guests that are currently running
+- name: Select registered VMs and containers
   ansible.builtin.set_fact:
-    proxmox_shutdown_running_guests: >-
+    proxmox_shutdown_guests: >-
       {{ proxmox_shutdown_guest_inventory.stdout | from_json
-         | selectattr('status', 'equalto', 'running') | list }}
+         | selectattr('type', 'in', ['qemu', 'lxc']) | list }}
 
-- name: Report guests targeted by this shutdown
+- name: Report guests discovered for shutdown
   ansible.builtin.debug:
     msg: >-
-      Active guests: {{ proxmox_shutdown_running_guests | map(attribute='id') | list }}.
-      The shutdown action stops guests one at a time and powers off the host only
-      after Proxmox reports no running guests.
+      Registered guests discovered: {{ proxmox_shutdown_guests | map(attribute='id') | list }}.
+      Proxmox will stop guests serially; poweroff requires each guest's live status
+      to be stopped.
 
-- name: Gracefully stop all running VMs and containers
+- name: Read live status of each discovered guest
+  ansible.builtin.command:
+    argv:
+      - "{{ 'qm' if item.type == 'qemu' else 'pct' }}"
+      - status
+      - "{{ item.vmid | string }}"
+      - --verbose
+  register: proxmox_shutdown_initial_live_status
+  changed_when: false
+  check_mode: false
+  loop: "{{ proxmox_shutdown_guests }}"
+  loop_control:
+    label: "{{ item.type }}/{{ item.vmid }}"
+
+- name: Report live guest states
+  ansible.builtin.debug:
+    msg: "{{ item.item.id }}: {{ item.stdout_lines | select('match', '^(qmp)?status:') | list | join(', ') }}"
+  loop: "{{ proxmox_shutdown_initial_live_status.results }}"
+  loop_control:
+    label: "{{ item.item.id }}"
+
+- name: Gracefully stop all Proxmox VMs and containers
   ansible.builtin.command:
     argv:
       - pvenode
@@ -39,9 +60,9 @@
       - "1"
   when:
     - not ansible_check_mode
-    - proxmox_shutdown_running_guests | length > 0
+    - proxmox_shutdown_guests | length > 0
 
-- name: Recheck registered guests before powering off
+- name: Rediscover registered guests before checking live status
   ansible.builtin.command:
     argv:
       - pvesh
@@ -56,13 +77,22 @@
   check_mode: false
   when: not ansible_check_mode
 
-- name: Require all VMs and containers to be stopped
-  ansible.builtin.assert:
-    that:
-      - (proxmox_shutdown_final_inventory.stdout | from_json
-         | selectattr('status', 'equalto', 'running') | list | length) == 0
-    fail_msg: At least one VM or container is still running; leaving the host powered on.
-    success_msg: No VMs or containers are running; host poweroff is safe to request.
+- name: Wait for each guest's live status to be explicitly stopped
+  ansible.builtin.command:
+    argv:
+      - "{{ 'qm' if item.type == 'qemu' else 'pct' }}"
+      - status
+      - "{{ item.vmid | string }}"
+      - --verbose
+  register: proxmox_shutdown_live_status
+  changed_when: false
+  check_mode: false
+  loop: "{{ proxmox_shutdown_final_inventory.stdout | from_json | selectattr('type', 'in', ['qemu', 'lxc']) | list }}"
+  loop_control:
+    label: "{{ item.type }}/{{ item.vmid }}"
+  until: "'status: stopped' in proxmox_shutdown_live_status.stdout_lines"
+  retries: "{{ proxmox_shutdown_status_retries }}"
+  delay: "{{ proxmox_shutdown_status_poll_interval }}"
   when: not ansible_check_mode
 
 - name: Power off the Proxmox host

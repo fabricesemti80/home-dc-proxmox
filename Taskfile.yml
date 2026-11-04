@@ -57,7 +57,7 @@ tasks:
       - ansible-playbook -i inventory reboot.yml
 
   shutdown-plan:
-    desc: List running guests that shutdown would stop; make no changes
+    desc: Show registered Proxmox guests without stopping or powering off
     cmds:
       - ansible-playbook -i inventory shutdown.yml --check
 

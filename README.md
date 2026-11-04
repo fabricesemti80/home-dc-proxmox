@@ -61,12 +61,12 @@ task plan       # check mode + diff; no host configuration applied
 task apply      # operator-run, modifies the host
 # Reboot after GPU/IOMMU changes, in a maintenance window:
 task reboot     # reboots pve-00; waits for Proxmox and Ansible reconnect
-# Preview active guests, then gracefully stop them and power off pve-00:
+# Preview discovered guests, then gracefully stop them and power off pve-00:
 task shutdown-plan
-task shutdown   # guests stop serially; the host stays on if any guest remains running
+task shutdown   # requires every guest to report stopped; otherwise host stays on
 ```
 
-`task shutdown-plan` reads the active Proxmox guest list in Ansible check mode and does not stop guests or power off the host. `task shutdown` uses Proxmox's stop-all operation with forced stops disabled and a 10-minute per-guest timeout; it powers off the host only after a fresh check confirms no VM or container remains running. If a guest does not shut down cleanly, the play fails and leaves the host on. This is an explicit operation, separate from `task apply`; SSH will disconnect when host poweroff begins.
+`task shutdown-plan` lists registered Proxmox guests with their live status in check mode and does not stop them or power off the host. `task shutdown` uses Proxmox's stop-all operation with forced stops disabled and a 10-minute per-guest timeout. Before poweroff, it rediscovers the guests and polls each VM with `qm status --verbose` and each container with `pct status --verbose`, requiring the live status to be exactly `stopped`; it does not use cached cluster status for this gate. If a guest remains paused or otherwise not stopped, the play fails and leaves the host on. This is an explicit operation, separate from `task apply`; SSH will disconnect when host poweroff begins.
 
 Check mode previews the Proxmox ZFS storage ID changes but does not perform them. Both currently contain no VM/CT volumes; if volumes are added before apply, the rename aborts. The underlying pools are not renamed. On a fresh replacement host, creating `slow` **erases the entire matching HDD**. Package candidates can change when the no-subscription repository is refreshed during apply. `task reboot` is independent of `task apply`, waits up to 15 minutes, then verifies Ansible connectivity.
 

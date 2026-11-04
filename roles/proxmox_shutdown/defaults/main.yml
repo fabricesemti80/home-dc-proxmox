@@ -1,2 +1,4 @@
 ---
 proxmox_shutdown_timeout: 600
+proxmox_shutdown_status_retries: 30
+proxmox_shutdown_status_poll_interval: 2
