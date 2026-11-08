@@ -15,6 +15,11 @@
   ansible.builtin.set_fact:
     hardware_notes_hw: "{{ hardware_notes_inventory.stdout | from_json }}"
 
+- name: Load the planned SSD-to-VM assignment from the SSD passthrough role
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/../proxmox_ssd_passthrough/defaults/main.yml"
+    name: hardware_notes_ssd_plan
+
 - name: Render the hardware summary
   ansible.builtin.set_fact:
     hardware_notes_text: "{{ lookup('ansible.builtin.template', 'summary.j2') | trim }}"
@@ -22,6 +27,11 @@
 - name: Show the summary
   ansible.builtin.debug:
     msg: "{{ hardware_notes_text.splitlines() }}"
+
+- name: "---------- HARDWARE NOTES: SSH BANNER ----------"
+  ansible.builtin.debug:
+    msg: "Pre-login banner served by sshd"
+  when: proxmox_hardware_notes_banner | bool
 
 - name: Install the SSH pre-login banner text
   ansible.builtin.copy:
@@ -62,6 +72,11 @@
   when:
     - proxmox_hardware_notes_banner | bool
     - not ansible_check_mode
+
+- name: "---------- HARDWARE NOTES: DATACENTER NOTES ----------"
+  ansible.builtin.debug:
+    msg: "Managed block in Datacenter > Summary > Notes"
+  when: proxmox_hardware_notes_datacenter | bool
 
 - name: Read the current datacenter options
   ansible.builtin.command:

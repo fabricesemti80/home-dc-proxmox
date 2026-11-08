@@ -1,4 +1,8 @@
 ---
+- name: "========== ROLE: SHUTDOWN =========="
+  ansible.builtin.debug:
+    msg: "Gracefully stop all guests, then power off the host"
+
 - name: Read registered Proxmox guests
   ansible.builtin.command:
     argv:

@@ -18,7 +18,13 @@
 {%   elif use.get('swap') %}
 {%     set role = 'host swap' %}
 {%   else %}
-{%     set role = 'unused' %}
+{%     set plan = namespace(vm='') %}
+{%     for p in (hardware_notes_ssd_plan | default({})).get('proxmox_ssd_passthrough_disks', []) %}
+{%       if (p.by_id | basename) in (disk.links.ids | default([])) %}
+{%         set plan.vm = 'VM ' ~ p.vmid ~ ' ' ~ p.vm_name %}
+{%       endif %}
+{%     endfor %}
+{%     set role = ('reserved for ' ~ plan.vm ~ ' (not attached yet)') if plan.vm else 'unused' %}
 {%   endif %}
 {%   set label = (disk.model or 'unknown disk') | trim %}
 {%   set ns.rows = ns.rows + [{'sort': role ~ label, 'text': '  %-26s %8s %-5s -> %s' | format(label, size, media, role)}] %}

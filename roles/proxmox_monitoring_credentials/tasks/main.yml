@@ -1,4 +1,8 @@
 ---
+- name: "========== ROLE: MONITORING CREDENTIALS =========="
+  ansible.builtin.debug:
+    msg: "Read-only PVE monitoring token stored in Doppler"
+
 - name: Refuse elevated monitoring role
   ansible.builtin.assert:
     that: proxmox_monitoring_role == 'PVEAuditor'

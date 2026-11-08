@@ -1,4 +1,8 @@
 ---
+- name: "========== ROLE: HARDWARE MONITORING =========="
+  ansible.builtin.debug:
+    msg: "Unprivileged host metrics exporter restricted by mutual TLS"
+
 - name: Inspect the node exporter service
   ansible.builtin.command: systemctl is-active prometheus-node-exporter
   register: hardware_exporter_service

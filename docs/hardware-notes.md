@@ -29,7 +29,8 @@ STORAGE
 | Which VM owns a passed-through GPU | `hostpci*` lines in `/etc/pve/qemu-server/*.conf`, resolved through `/etc/pve/mapping/pci.cfg` when a mapping is used. |
 | Which VM owns a passed-through disk | `scsi/sata/virtio/ide*` lines that point at `/dev/...` (for example `/dev/disk/by-id/...`) in the VM configs; the link is resolved to its kernel disk. |
 | Which disk backs a ZFS pool and Proxmox storage | `zpool status -P` and the `zfspool:` entries of `/etc/pve/storage.cfg`. |
-| Other host use | `/proc/mounts` and `/proc/swaps`. A disk with none of the above is shown as `unused`. |
+| Other host use | `/proc/mounts` and `/proc/swaps`. A disk with none of the above is shown as `unused`, unless it is in the planned SSD assignment (below). |
+| Planned passthrough disks | The `proxmox_ssd_passthrough_disks` table in `roles/proxmox_ssd_passthrough/defaults/main.yml` (read from there, not duplicated). A planned disk that no VM references yet is shown as `reserved for VM <id> <name> (not attached yet)`, and switches to `passed through to ...` once the VM config references it. |
 
 The read-only helper is `roles/proxmox_hardware_notes/files/hardware_inventory.py`; the layout is `templates/summary.j2`. Only the **current** VM configuration is read: `[PENDING]` and snapshot sections are ignored.
 
@@ -39,7 +40,7 @@ The read-only helper is `roles/proxmox_hardware_notes/files/hardware_inventory.p
 - **Datacenter Notes**: only the text between `<!-- BEGIN proxmox_hardware_notes ... -->` and `<!-- END proxmox_hardware_notes -->` is managed. Anything else already in the Notes is kept; edits inside the markers are overwritten on the next apply. Set `proxmox_hardware_notes_datacenter: false` to skip it.
 - sshd honours the first `Banner` directive it reads. The role reads the effective configuration with `sshd -T` and **fails** if another directive wins, instead of silently doing nothing. sshd is reloaded only when the drop-in changes; banner text changes need no reload.
 - Disks handed to a VM through a Proxmox storage (a virtual disk) are not "passed through" and are not detected as such. Hardware that is used in a way none of the sources above can see appears as `unused`.
-- The summary reflects the state **at the last apply**. Re-run `task hardware-notes-apply` after changing hardware or VM assignments.
+- The summary reflects the state **at the last apply**. Disk attachment to VMs is done by OpenTofu in `home-dc-terraform`, which runs **after** this playbook, so the first apply after a new disk is installed shows it as `reserved` (or `unused`). Re-run `task hardware-notes-apply` after changing hardware or after the OpenTofu apply that attaches or detaches a disk or GPU.
 
 ## Validation
 

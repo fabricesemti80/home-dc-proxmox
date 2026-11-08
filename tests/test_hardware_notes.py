@@ -1,4 +1,5 @@
 import importlib.util
+import os
 from pathlib import Path
 import re
 import unittest
@@ -145,14 +146,25 @@ class InventoryTests(unittest.TestCase):
             self.assertEqual(inv.disk_of(raw), disk, raw)
 
 
-def render(devices, hw):
+PLAN = {
+    'proxmox_ssd_passthrough_disks': [
+        {'vmid': 4096, 'vm_name': 'k8s-wrkr-02', 'by_id': '/dev/disk/by-id/ata-CT500MX500SSD1_PLANNED'},
+    ]
+}
+
+
+def render(devices, hw, plan=None):
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(ROLE / 'templates'), trim_blocks=True)
     env.tests['match'] = lambda value, pattern: re.match(pattern, value) is not None
-    return env.get_template('summary.j2').render(ansible_facts={'hostname': 'pve-00', 'devices': devices}, hardware_notes_hw=hw).strip()
+    env.filters['basename'] = os.path.basename
+    context = {'ansible_facts': {'hostname': 'pve-00', 'devices': devices}, 'hardware_notes_hw': hw}
+    if plan is not None:
+        context['hardware_notes_ssd_plan'] = plan
+    return env.get_template('summary.j2').render(**context).strip()
 
 
-def device(model, sectors, rotational='0'):
-    return {'model': model, 'sectors': str(sectors), 'sectorsize': '512', 'rotational': rotational}
+def device(model, sectors, rotational='0', ids=None):
+    return {'model': model, 'sectors': str(sectors), 'sectorsize': '512', 'rotational': rotational, 'links': {'ids': ids or []}}
 
 
 class SummaryTests(unittest.TestCase):
@@ -204,6 +216,22 @@ class SummaryTests(unittest.TestCase):
         text = render(self.devices, self.hw)
         self.assertIn('unknown disk', text)
         self.assertNotIn('None', text)
+
+    def test_planned_but_unattached_disk_is_reserved_not_unused(self):
+        self.devices['sdg'] = device('CT500MX500SSD1', 976773168, ids=['ata-CT500MX500SSD1_PLANNED'])
+        text = render(self.devices, self.hw, PLAN)
+        self.assertRegex(text, r'CT500MX500SSD1\s+500 GB SSD\s+-> reserved for VM 4096 k8s-wrkr-02 \(not attached yet\)')
+
+    def test_attached_planned_disk_is_reported_as_passed_through(self):
+        self.devices['sdg'] = device('CT500MX500SSD1', 976773168, ids=['ata-CT500MX500SSD1_PLANNED'])
+        self.hw['usage']['sdg'] = {'vms': [{'vmid': '4096', 'vm': 'k8s-wrkr-02', 'iface': 'scsi2'}], 'zfs': None, 'mounts': [], 'swap': False}
+        text = render(self.devices, self.hw, PLAN)
+        self.assertNotIn('reserved for', text)
+        self.assertIn('passed through to VM 4096 k8s-wrkr-02 (scsi2)', text)
+
+    def test_unplanned_disk_stays_unused_even_with_a_plan_loaded(self):
+        self.devices['sdg'] = device('OTHER SSD', 976773168, ids=['ata-OTHER_SSD_1'])
+        self.assertRegex(render(self.devices, self.hw, PLAN), r'OTHER SSD\s+500 GB SSD\s+-> unused')
 
 
 if __name__ == '__main__':
