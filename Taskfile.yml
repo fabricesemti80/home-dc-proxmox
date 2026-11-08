@@ -56,6 +56,16 @@ tasks:
     cmds:
       - ansible-playbook -i inventory site.yml --tags ssd-passthrough {{.CLI_ARGS}}
 
+  hardware-notes-plan:
+    desc: Preview the SSH banner and datacenter Notes generated from host hardware
+    cmds:
+      - ansible-playbook -i inventory site.yml --check --diff --tags hardware-notes
+
+  hardware-notes-apply:
+    desc: Write the hardware summary to the SSH banner and the datacenter Notes
+    cmds:
+      - ansible-playbook -i inventory site.yml --tags hardware-notes
+
   apply:
     desc: Apply standalone PVE host configuration (operator initiated)
     cmds:

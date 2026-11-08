@@ -33,6 +33,7 @@ The BIOS selects the GT 710 as primary display (`0000:02:00.0`, `boot_vga=1`); t
 7. `roles/proxmox_monitoring_credentials/` — provision a privilege-separated, read-only monitoring token and store it in Doppler. See [monitoring credential setup](docs/monitoring-credentials.md).
 8. `roles/proxmox_hardware_monitoring/` — install an unprivileged host metrics exporter restricted by mutual TLS. See [hardware monitoring](docs/hardware-monitoring.md).
 9. `roles/proxmox_ssd_passthrough/` — verify and guard the three MX500 SSDs reserved for raw VM passthrough, optionally wipe their old signatures (default off), and publish the VMID↔disk mapping. See [SSD passthrough](docs/ssd-passthrough.md). Use `task ssd-passthrough-plan`/`task ssd-passthrough-apply`.
+10. `roles/proxmox_hardware_notes/` — write an at-a-glance GPU and storage summary, generated from Ansible facts and the live VM configuration, to the SSH pre-login banner and the datacenter Notes. See [hardware notes](docs/hardware-notes.md). Use `task hardware-notes-plan`/`task hardware-notes-apply`.
 
 Each role owns its tasks and defaults. `site.yml` does not duplicate their implementation. Use `task nfs-plan`/`task nfs-apply` for NFS-only changes and `task monitoring-credentials-plan`/`task monitoring-credentials-apply` for the monitoring identity; `task plan` previews all roles. The Terraform role is included by default: review its root-equivalent API access before `task apply`. Doppler-backed roles use the same Keychain-backed, config-scoped service token (`home-dc-proxmox/prd`, read/write); save it with `task doppler-token-save`; see [mail setup](docs/mail.md).
 
@@ -46,6 +47,7 @@ Each role owns its tasks and defaults. `site.yml` does not duplicate their imple
 - On the first `task apply`, provisions a root-equivalent, privilege-separated Proxmox Terraform API token and stores the secret in Doppler. Never exposes the token in Ansible output or rotates it on subsequent runs.
 - Provisions a separate read-only, privilege-separated PVE monitoring token; see [monitoring credentials](docs/monitoring-credentials.md) for validation and rotation.
 - Verifies the three reserved SSDs by `/dev/disk/by-id`, refuses if the host uses them, installs an ignore-udev rule and an assignment metric; erases old signatures **only** with the explicit `proxmox_ssd_passthrough_wipe_signatures=true` opt-in. It never attaches a disk to a VM (OpenTofu/operator does) and never stops or starts a VM.
+- Writes `/etc/ssh/pve-hardware-banner`, an sshd drop-in that serves it as the pre-login banner (shown to anyone who connects; models and sizes only, no serials), and a marker-delimited block in the datacenter Notes (existing notes are preserved). The text is regenerated on every apply, so added, moved or re-assigned drives and GPUs are reflected. It reloads sshd only when the drop-in changes.
 - Never reboots automatically during `task apply`. The separate operator-run `task reboot` uses Ansible's reboot module and waits for Proxmox and SSH to return. No role installs a guest VM, backup jobs or cluster services.
 
 ## Secrets and environment variables

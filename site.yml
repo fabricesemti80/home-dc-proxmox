@@ -32,3 +32,5 @@
       tags: hardware-monitoring
     - role: proxmox_ssd_passthrough
       tags: [ssd-passthrough, storage-ssd]
+    - role: proxmox_hardware_notes
+      tags: [hardware-notes, notes]

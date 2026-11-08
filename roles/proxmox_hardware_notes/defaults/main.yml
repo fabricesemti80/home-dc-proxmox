@@ -1,0 +1,18 @@
+---
+# At-a-glance hardware notes for pve-00, generated from Ansible facts plus a read-only
+# helper (GPU driver binding, VM passthrough references, ZFS pool membership).
+# Two outputs, both rewritten on every run so hardware changes are picked up:
+#   1. an sshd pre-login banner, and
+#   2. a managed block in the Proxmox datacenter Notes (datacenter.cfg `description`).
+proxmox_hardware_notes_banner: true
+proxmox_hardware_notes_datacenter: true
+
+# The banner is shown to anyone who connects, before authentication. The text lists
+# hardware models and sizes only: no serials, addresses or credentials.
+proxmox_hardware_notes_banner_path: /etc/ssh/pve-hardware-banner
+proxmox_hardware_notes_sshd_dropin: /etc/ssh/sshd_config.d/20-pve-hardware-banner.conf
+
+# Only the text between these markers is managed; anything else already written in
+# the datacenter Notes is preserved.
+proxmox_hardware_notes_marker_begin: "<!-- BEGIN proxmox_hardware_notes (managed by Ansible) -->"
+proxmox_hardware_notes_marker_end: "<!-- END proxmox_hardware_notes -->"

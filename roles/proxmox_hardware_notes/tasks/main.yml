@@ -1,0 +1,106 @@
+---
+- name: "========== ROLE: HARDWARE NOTES =========="
+  ansible.builtin.debug:
+    msg: "Write an at-a-glance GPU/storage summary to the SSH banner and the datacenter Notes"
+
+- name: Inspect GPU driver binding and storage usage (read-only)
+  ansible.builtin.script:
+    cmd: hardware_inventory.py
+    executable: /usr/bin/python3
+  register: hardware_notes_inventory
+  changed_when: false
+  check_mode: false
+
+- name: Parse the inventory
+  ansible.builtin.set_fact:
+    hardware_notes_hw: "{{ hardware_notes_inventory.stdout | from_json }}"
+
+- name: Render the hardware summary
+  ansible.builtin.set_fact:
+    hardware_notes_text: "{{ lookup('ansible.builtin.template', 'summary.j2') | trim }}"
+
+- name: Show the summary
+  ansible.builtin.debug:
+    msg: "{{ hardware_notes_text.splitlines() }}"
+
+- name: Install the SSH pre-login banner text
+  ansible.builtin.copy:
+    dest: "{{ proxmox_hardware_notes_banner_path }}"
+    owner: root
+    group: root
+    mode: '0644'
+    content: "{{ hardware_notes_text }}\n"
+  when: proxmox_hardware_notes_banner | bool
+
+- name: Point sshd at the banner
+  ansible.builtin.copy:
+    dest: "{{ proxmox_hardware_notes_sshd_dropin }}"
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # managed by proxmox_hardware_notes
+      Banner {{ proxmox_hardware_notes_banner_path }}
+  when: proxmox_hardware_notes_banner | bool
+  notify: Reload sshd
+
+- name: Read the effective sshd configuration (also validates it)
+  ansible.builtin.command:
+    argv: [sshd, -T]
+  register: hardware_notes_sshd_effective
+  changed_when: false
+  check_mode: false
+  when: proxmox_hardware_notes_banner | bool
+
+- name: Require that sshd will serve this banner
+  ansible.builtin.assert:
+    that:
+      - hardware_notes_sshd_effective.stdout is search('(?m)^banner ' ~ (proxmox_hardware_notes_banner_path | regex_escape) ~ '$')
+    fail_msg: >-
+      sshd would not use {{ proxmox_hardware_notes_banner_path }}. A Banner directive earlier in
+      /etc/ssh/sshd_config (or an earlier drop-in) wins over {{ proxmox_hardware_notes_sshd_dropin }}.
+  when:
+    - proxmox_hardware_notes_banner | bool
+    - not ansible_check_mode
+
+- name: Read the current datacenter options
+  ansible.builtin.command:
+    argv: [pvesh, get, /cluster/options, --output-format, json]
+  register: hardware_notes_dc_options
+  changed_when: false
+  check_mode: false
+  when: proxmox_hardware_notes_datacenter | bool
+
+- name: Compute the datacenter Notes
+  ansible.builtin.set_fact:
+    hardware_notes_dc_current: "{{ (hardware_notes_dc_options.stdout | from_json).get('description', '') }}"
+    hardware_notes_dc_block: "{{ proxmox_hardware_notes_marker_begin }}\n```text\n{{ hardware_notes_text }}\n```\n{{ proxmox_hardware_notes_marker_end }}"
+  when: proxmox_hardware_notes_datacenter | bool
+
+- name: Merge the managed block into the existing Notes
+  ansible.builtin.set_fact:
+    hardware_notes_dc_new: |-
+      {%- if proxmox_hardware_notes_marker_begin in hardware_notes_dc_current and proxmox_hardware_notes_marker_end in hardware_notes_dc_current -%}
+      {{ hardware_notes_dc_current.split(proxmox_hardware_notes_marker_begin)[0] }}{{ hardware_notes_dc_block }}{{ hardware_notes_dc_current.split(proxmox_hardware_notes_marker_end, 1)[1] }}
+      {%- elif hardware_notes_dc_current | trim -%}
+      {{ hardware_notes_dc_current | trim }}
+
+      {{ hardware_notes_dc_block }}
+      {%- else -%}
+      {{ hardware_notes_dc_block }}
+      {%- endif -%}
+  when: proxmox_hardware_notes_datacenter | bool
+
+- name: Report whether the datacenter Notes would change
+  ansible.builtin.debug:
+    msg: "Datacenter Notes {{ 'need updating' if (hardware_notes_dc_new | trim) != (hardware_notes_dc_current | trim) else 'are up to date' }}"
+  when: proxmox_hardware_notes_datacenter | bool
+
+- name: Update the datacenter Notes
+  ansible.builtin.command:
+    argv: [pvesh, set, /cluster/options, --description, "{{ hardware_notes_dc_new }}"]
+  changed_when: true
+  when:
+    - proxmox_hardware_notes_datacenter | bool
+    - (hardware_notes_dc_new | trim) != (hardware_notes_dc_current | trim)
+    - not ansible_check_mode
