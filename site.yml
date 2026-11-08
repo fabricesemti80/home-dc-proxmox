@@ -30,3 +30,5 @@
       tags: monitoring-credentials
     - role: proxmox_hardware_monitoring
       tags: hardware-monitoring
+    - role: proxmox_ssd_passthrough
+      tags: [ssd-passthrough, storage-ssd]

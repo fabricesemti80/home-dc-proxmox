@@ -1,0 +1,35 @@
+---
+# Raw whole-disk SSD passthrough preparation for the Talos app-cluster workers.
+# Always address disks by stable /dev/disk/by-id path; sdX names change between boots.
+# This table is the single source of truth consumed by the docs; the OpenTofu
+# attachment (home-dc-terraform) and Talos selectors (home-dc-kubernetes) must agree.
+proxmox_ssd_passthrough_disks:
+  - vmid: 4095
+    vm_name: k8s-wrkr-01-gpu
+    by_id: /dev/disk/by-id/ata-CT500MX500SSD1_2344E8836BF7
+    serial: 2344E8836BF7
+  - vmid: 4096
+    vm_name: k8s-wrkr-02
+    by_id: /dev/disk/by-id/ata-CT500MX500SSD1_2344E8836D00
+    serial: 2344E8836D00
+  - vmid: 4097
+    vm_name: k8s-wrkr-03
+    by_id: /dev/disk/by-id/ata-CT500MX500SSD1_2349E8875927
+    serial: 2349E8875927
+
+# Guest-side attachment point (informational; attached by OpenTofu/operator, not by this role).
+proxmox_ssd_passthrough_guest_interface: scsi2
+
+# Crucial MX500 500GB: 500107862016 bytes (465.76 GiB).
+proxmox_ssd_passthrough_model_match: MX500
+proxmox_ssd_passthrough_size_bytes: 500107862016
+
+# DESTRUCTIVE, default OFF. When true the role erases old filesystem/partition-table
+# signatures (wipefs) from the disks above, but only if every guard passes: no mount,
+# no active swap, no ZFS/LVM use, no VM/CT/storage/fstab reference at all.
+# Enable only on the command line for the one-off wipe:
+#   ansible-playbook -i inventory site.yml --tags ssd-passthrough -e proxmox_ssd_passthrough_wipe_signatures=true
+proxmox_ssd_passthrough_wipe_signatures: false
+
+# Publish the VMID <-> serial mapping so SMART series (smartmon_*, keyed by serial_number) can be joined to VMs.
+proxmox_ssd_passthrough_textfile_dir: /var/lib/prometheus/node-exporter

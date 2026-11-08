@@ -1,0 +1,42 @@
+---
+# Destructive path. Only included when proxmox_ssd_passthrough_wipe_signatures is true.
+- name: Refuse to wipe disks that are referenced anywhere or hold ZFS/LVM data
+  ansible.builtin.assert:
+    that:
+      - ssd_passthrough_state[item.vmid | string].vm_references | length == 0
+      - not ssd_passthrough_state[item.vmid | string].zfs_member_signature
+      - not ssd_passthrough_state[item.vmid | string].lvm_member_signature
+    fail_msg: >-
+      Refusing to wipe {{ item.by_id }}: referenced by VM(s) {{ ssd_passthrough_state[item.vmid | string].vm_references }}
+      or carries a ZFS/LVM member signature. Inspect manually; the role never wipes attached or pooled disks.
+  loop: "{{ proxmox_ssd_passthrough_disks }}"
+  loop_control:
+    label: "{{ item.vmid }} {{ item.by_id | basename }}"
+
+- name: Preview signature wipe
+  ansible.builtin.debug:
+    msg: "Would wipe {{ ssd_passthrough_state[item.vmid | string].partitions | length }} partition(s) and the partition table of {{ item.by_id }}"
+  changed_when: true
+  loop: "{{ proxmox_ssd_passthrough_disks }}"
+  loop_control:
+    label: "{{ item.vmid }} {{ item.by_id | basename }}"
+  when:
+    - ansible_check_mode
+    - >-
+      ssd_passthrough_state[item.vmid | string].pttype is not none
+      or ssd_passthrough_state[item.vmid | string].partitions | length > 0
+      or ssd_passthrough_state[item.vmid | string].fstypes | length > 0
+
+- name: Erase old partition and filesystem signatures (partitions first, then the disk)
+  ansible.builtin.command:
+    argv: "{{ ['wipefs', '--all', '--force'] + ssd_passthrough_state[item.vmid | string].partitions + [item.by_id] }}"
+  loop: "{{ proxmox_ssd_passthrough_disks }}"
+  loop_control:
+    label: "{{ item.vmid }} {{ item.by_id | basename }}"
+  when:
+    - not ansible_check_mode
+    - >-
+      ssd_passthrough_state[item.vmid | string].pttype is not none
+      or ssd_passthrough_state[item.vmid | string].partitions | length > 0
+      or ssd_passthrough_state[item.vmid | string].fstypes | length > 0
+  changed_when: true
