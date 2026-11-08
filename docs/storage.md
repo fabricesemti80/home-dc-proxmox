@@ -16,3 +16,5 @@ The HDD was observed as `/dev/sda` with an existing GPT and three small partitio
 Select `local-nvme` for latency-sensitive guests and `local-hdd` for capacity-oriented VM or container disks. Neither pool is redundant; the NVMe and HDD are separate failure domains, not mirrors. Configure independent backups before placing irreplaceable data on either. After applying, check `zpool status slow` and `pvesm status`.
 
 Both pools are single-disk ZFS vdevs with `ashift=12`. The exact disk models, serials, partition layouts, boot path and free expansion points are recorded in [hardware.md](hardware.md), which also covers mirroring the HDD pool and the boot NVMe.
+
+Three further 500 GB SATA SSDs (Crucial MX500) are **not** Proxmox storages: they are reserved for raw whole-disk passthrough to the Talos app-cluster workers (Longhorn). The host never mounts, pools or formats them; see [ssd-passthrough.md](ssd-passthrough.md).

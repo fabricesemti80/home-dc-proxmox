@@ -1,0 +1,130 @@
+---
+- name: "========== ROLE: SSD PASSTHROUGH =========="
+  ansible.builtin.debug:
+    msg: "Prepare three MX500 SSDs for raw VM passthrough (host never uses them)"
+
+- name: Validate the assignment table
+  ansible.builtin.assert:
+    that:
+      - proxmox_ssd_passthrough_disks | length > 0
+      - proxmox_ssd_passthrough_disks | map(attribute='vmid') | unique | list | length == proxmox_ssd_passthrough_disks | length
+      - proxmox_ssd_passthrough_disks | map(attribute='by_id') | unique | list | length == proxmox_ssd_passthrough_disks | length
+      - proxmox_ssd_passthrough_disks | map(attribute='by_id') | select('match', '^/dev/disk/by-id/[^/]+$') | list | length == proxmox_ssd_passthrough_disks | length
+      - proxmox_ssd_passthrough_wipe_signatures | string | lower in ['true', 'false']
+    fail_msg: Disks must be unique, addressed by /dev/disk/by-id path, and the wipe switch must be true or false.
+
+- name: Inspect passthrough disks read-only
+  ansible.builtin.script:
+    cmd: inspect_disk.py {{ item.by_id | quote }}
+    executable: /usr/bin/python3
+  loop: "{{ proxmox_ssd_passthrough_disks }}"
+  loop_control:
+    label: "{{ item.vmid }} {{ item.by_id | basename }}"
+  register: ssd_passthrough_inspect
+  changed_when: false
+  check_mode: false
+
+- name: Index inspection results by VMID
+  ansible.builtin.set_fact:
+    ssd_passthrough_state: "{{ ssd_passthrough_state | default({}) | combine({item.item.vmid | string: (item.stdout | from_json)}) }}"
+  loop: "{{ ssd_passthrough_inspect.results }}"
+  loop_control:
+    label: "{{ item.item.vmid }}"
+
+- name: Verify each by-id device exists and is the expected SSD
+  ansible.builtin.assert:
+    that:
+      - ssd_passthrough_state[item.vmid | string].present
+      - ssd_passthrough_state[item.vmid | string].is_block | default(false)
+      - not (ssd_passthrough_state[item.vmid | string].lsblk_error | default(false))
+      - ssd_passthrough_state[item.vmid | string].serial == item.serial
+      - proxmox_ssd_passthrough_model_match in ssd_passthrough_state[item.vmid | string].model
+      - ssd_passthrough_state[item.vmid | string].size == proxmox_ssd_passthrough_size_bytes
+    fail_msg: "{{ item.by_id }} is missing or is not the expected {{ proxmox_ssd_passthrough_model_match }} (serial {{ item.serial }}, {{ proxmox_ssd_passthrough_size_bytes }} bytes); refusing to continue."
+  loop: "{{ proxmox_ssd_passthrough_disks }}"
+  loop_control:
+    label: "{{ item.vmid }} {{ item.by_id | basename }}"
+
+- name: Verify the host does not use any passthrough disk
+  ansible.builtin.assert:
+    that:
+      - ssd_passthrough_state[item.vmid | string].mounts | length == 0
+      - ssd_passthrough_state[item.vmid | string].swap_active | length == 0
+      - ssd_passthrough_state[item.vmid | string].holders | length == 0
+      - not ssd_passthrough_state[item.vmid | string].zfs_pool_member
+      - not ssd_passthrough_state[item.vmid | string].fstab_reference
+      - not ssd_passthrough_state[item.vmid | string].storage_cfg_reference
+      - ssd_passthrough_state[item.vmid | string].ct_references | length == 0
+      - ssd_passthrough_state[item.vmid | string].vm_references | difference([item.vmid | string]) | length == 0
+    fail_msg: >-
+      {{ item.by_id }} is in use by the host or referenced by something other than VM {{ item.vmid }}
+      (mounts={{ ssd_passthrough_state[item.vmid | string].mounts }},
+      swap={{ ssd_passthrough_state[item.vmid | string].swap_active }},
+      holders={{ ssd_passthrough_state[item.vmid | string].holders }},
+      zfs={{ ssd_passthrough_state[item.vmid | string].zfs_pool_member }},
+      fstab={{ ssd_passthrough_state[item.vmid | string].fstab_reference }},
+      storage.cfg={{ ssd_passthrough_state[item.vmid | string].storage_cfg_reference }},
+      ct={{ ssd_passthrough_state[item.vmid | string].ct_references }},
+      vm={{ ssd_passthrough_state[item.vmid | string].vm_references }}).
+  loop: "{{ proxmox_ssd_passthrough_disks }}"
+  loop_control:
+    label: "{{ item.vmid }} {{ item.by_id | basename }}"
+
+- name: Ignore passthrough disks in desktop-style automounters
+  ansible.builtin.copy:
+    dest: /etc/udev/rules.d/99-pve-passthrough-ssd.rules
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # managed by proxmox_ssd_passthrough: these SSDs belong to VMs, never to the host
+      {% for disk in proxmox_ssd_passthrough_disks %}
+      # VM {{ disk.vmid }} {{ disk.vm_name }}
+      SUBSYSTEM=="block", ENV{ID_SERIAL_SHORT}=="{{ disk.serial }}", ENV{UDISKS_IGNORE}="1"
+      {% endfor %}
+  notify: Reload udev rules
+
+- name: Wipe old signatures (guarded, opt-in)
+  ansible.builtin.include_tasks: wipe.yml
+  when: proxmox_ssd_passthrough_wipe_signatures | bool
+
+- name: Read SMART health and attributes
+  ansible.builtin.command:
+    argv: [smartctl, --health, --attributes, "{{ item.by_id }}"]
+  loop: "{{ proxmox_ssd_passthrough_disks }}"
+  loop_control:
+    label: "{{ item.vmid }} {{ item.by_id | basename }}"
+  register: ssd_passthrough_smart
+  changed_when: false
+  failed_when: ssd_passthrough_smart.rc == 127 or (ssd_passthrough_smart.rc | int) % 4 != 0
+  check_mode: false
+
+- name: Report pending, reallocated and uncorrectable sectors
+  ansible.builtin.debug:
+    msg: >-
+      VM {{ item.item.vmid }} {{ item.item.by_id | basename }}:
+      pending={{ (item.stdout | regex_search('(?m)^197 .*\s(\d+)\s*$', '\1') or ['n/a'])[0] }},
+      reallocated={{ (item.stdout | regex_search('(?m)^\s*5 .*\s(\d+)\s*$', '\1') or ['n/a'])[0] }}
+      (accepted by the owner for this build; alerts come from DiskBadSectors).
+  loop: "{{ ssd_passthrough_smart.results }}"
+  loop_control:
+    label: "{{ item.item.vmid }}"
+
+- name: Inspect the node-exporter textfile directory
+  ansible.builtin.stat:
+    path: "{{ proxmox_ssd_passthrough_textfile_dir }}"
+  register: ssd_passthrough_textfile
+
+- name: Publish the VM-to-disk assignment for joining with smartmon series
+  ansible.builtin.copy:
+    dest: "{{ proxmox_ssd_passthrough_textfile_dir }}/ssd_passthrough.prom"
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      # HELP pve_passthrough_disk_assignment_info Planned VM owner of a raw-passthrough SSD (join on serial_number with smartmon_device_info).
+      # TYPE pve_passthrough_disk_assignment_info gauge
+      {% for disk in proxmox_ssd_passthrough_disks %}
+      pve_passthrough_disk_assignment_info{vmid="{{ disk.vmid }}",vm="{{ disk.vm_name }}",serial_number="{{ disk.serial }}",interface="{{ proxmox_ssd_passthrough_guest_interface }}"} 1
+      {% endfor %}
+  when: ssd_passthrough_textfile.stat.exists and ssd_passthrough_textfile.stat.isdir

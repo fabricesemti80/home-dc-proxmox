@@ -46,6 +46,16 @@ tasks:
       - ansible-playbook -i inventory site.yml --tags hardware-monitoring
 
 
+  ssd-passthrough-plan:
+    desc: Preview SSD passthrough host preparation (guards run read-only; wipe stays off)
+    cmds:
+      - ansible-playbook -i inventory site.yml --check --diff --tags ssd-passthrough
+
+  ssd-passthrough-apply:
+    desc: Apply SSD passthrough host preparation (wipe only with `-- -e proxmox_ssd_passthrough_wipe_signatures=true`)
+    cmds:
+      - ansible-playbook -i inventory site.yml --tags ssd-passthrough {{.CLI_ARGS}}
+
   apply:
     desc: Apply standalone PVE host configuration (operator initiated)
     cmds:
