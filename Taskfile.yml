@@ -6,6 +6,26 @@ tasks:
       - task --list
     silent: true
 
+  packages-plan:
+    desc: Preview host utility package installation
+    cmds:
+      - ansible-playbook -i inventory site.yml --check --diff --tags packages
+
+  packages-apply:
+    desc: Install configured host utility packages
+    cmds:
+      - ansible-playbook -i inventory site.yml --tags packages
+
+  wireless-regulatory-plan:
+    desc: Preview optional wireless regulatory configuration
+    cmds:
+      - ansible-playbook -i inventory site.yml --check --diff --tags wireless-regulatory
+
+  wireless-regulatory-apply:
+    desc: Apply optional wireless regulatory configuration
+    cmds:
+      - ansible-playbook -i inventory site.yml --tags wireless-regulatory
+
   doppler-token-save:
     desc: Securely add or replace the home-dc-proxmox/prd Doppler service token in macOS Keychain
     cmds:

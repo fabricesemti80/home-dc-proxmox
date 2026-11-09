@@ -1,0 +1,11 @@
+---
+- name: "========== ROLE: PROXMOX_PACKAGES =========="
+  ansible.builtin.debug:
+    msg: Install the configured host utility packages.
+
+- name: Install host utility packages
+  ansible.builtin.apt:
+    name: "{{ proxmox_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600

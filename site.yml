@@ -16,6 +16,10 @@
   roles:
     - role: proxmox_updates
       tags: updates
+    - role: proxmox_packages
+      tags: packages
+    - role: proxmox_wireless_regulatory
+      tags: wireless-regulatory
     - role: proxmox_storage
       tags: storage
     - role: proxmox_nfs

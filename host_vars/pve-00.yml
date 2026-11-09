@@ -1,0 +1,4 @@
+---
+# Physical location of this host; do not use GB for hardware in another country.
+proxmox_wireless_regulatory_enabled: true
+proxmox_wireless_regulatory_country: GB

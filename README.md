@@ -24,6 +24,12 @@ The BIOS selects the GT 710 as primary display (`0000:02:00.0`, `boot_vga=1`); t
 
 `site.yml` selects the single `pve` inventory host, checks its Debian version, and composes the roles in order:
 
+Immediately after repository setup, `proxmox_packages` installs configurable host utilities
+(`wireless-regdb`, `iw`, `usbutils`, `ethtool`), then `proxmox_wireless_regulatory`
+optionally sets the wireless country. Both have separate role banners and tags.
+The latter defaults to disabled with country `GB`; `host_vars/pve-00.yml` explicitly
+opts this host into GB. See [host packages and wireless regulation](docs/host-packages.md).
+
 1. `roles/proxmox_updates/` — disable subscription-only sources, enable no-subscription PVE, upgrade packages. Repository URL and suite are in `defaults/main.yml`.
 2. `roles/proxmox_storage/` — verify the HDD identity, create `slow` ZFS pool if absent, register descriptive Proxmox IDs `local-nvme` and `local-hdd`. Disk WWN, expected serial, pool and storage names are in `defaults/main.yml`. The default `local` ID is never changed.
 3. `roles/proxmox_nfs/` — register NAS template, ISO, and backup exports with Proxmox content restrictions. The backup share is limited to VZDump archives; no PBS datastore is mapped.
@@ -40,6 +46,9 @@ Each role owns its tasks and defaults. `site.yml` does not duplicate their imple
 ## What Ansible changes
 
 - Removes subscription-only PVE and unused Ceph APT sources; adds the official `pve-no-subscription` repository for Debian trixie; updates APT metadata and performs a distribution upgrade. No Ceph installation or Ceph storage configuration.
+- Installs host utilities without configuring a Wi-Fi connection. On opted-in hosts,
+  persists and applies the wireless regulatory domain with cfg80211 and a boot-time
+  systemd service; no host reboot, interface activation, bridge or route changes.
 - Migrates the empty Proxmox ZFS storage IDs `local-zfs` → `local-nvme` and `slow` → `local-hdd`, retaining the ZFS pools `rpool/data` and `slow` and all underlying data. Refuses to rename a storage with VM/CT volumes or a conflicting new ID. On a fresh host without the `slow` pool, creates it by **erasing the entire matching HDD**. Default `local` on the NVMe remains unchanged.
 - Adds `nfs-proxmox-template` (`/proxmox-template`: `vztmpl,images`), `nfs-proxmox-iso` (`/proxmox-iso`: `iso,import,images`), and `nfs-proxmox-backup` (`/proxmox-backup`: `backup` only) from `10.0.40.2`. The ISO share stores boot ISOs and VM/cloud-init images. Existing VZDump archives are preserved and no backup job is scheduled. The separate `/proxmox-pbs-datastore` export is mounted inside the PBS LXC by `home-dc-terraform/scripts/configure-pbs.sh`.
 - Prepares passthrough for the P2000 graphics and audio functions only, without globally blacklisting the GT 710's driver. Changes become active after a separate reboot; no VM is created.

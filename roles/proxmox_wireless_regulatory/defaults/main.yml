@@ -1,0 +1,3 @@
+---
+proxmox_wireless_regulatory_enabled: false
+proxmox_wireless_regulatory_country: GB

@@ -1,0 +1,70 @@
+---
+- name: "========== ROLE: PROXMOX_WIRELESS_REGULATORY =========="
+  ansible.builtin.debug:
+    msg: Configure the optional wireless regulatory domain.
+
+- name: Configure wireless regulatory domain when opted in
+  when: proxmox_wireless_regulatory_enabled | bool
+  block:
+    - name: Validate country code
+      ansible.builtin.assert:
+        that:
+          - proxmox_wireless_regulatory_country is match('^[A-Z]{2}$')
+        fail_msg: Use the two-letter uppercase code for the host's actual country.
+
+    - name: Install regulatory tools and database
+      ansible.builtin.apt:
+        name: [wireless-regdb, iw]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Persist domain for cfg80211 module initialization
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/wireless-regulatory.conf
+        content: "options cfg80211 ieee80211_regdom={{ proxmox_wireless_regulatory_country }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install boot-time regulatory domain service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/wireless-regulatory.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Set wireless regulatory domain
+          After=systemd-modules-load.service
+          [Service]
+          Type=oneshot
+          ExecStartPre=/usr/sbin/iw reg reload
+          ExecStart=/usr/sbin/iw reg set {{ proxmox_wireless_regulatory_country }}
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=multi-user.target
+      register: proxmox_wireless_regulatory_unit
+
+    - name: Read current regulatory domain
+      ansible.builtin.command: /usr/sbin/iw reg get
+      register: proxmox_wireless_regulatory_current
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Enable and apply regulatory domain
+      ansible.builtin.systemd_service:
+        name: wireless-regulatory.service
+        daemon_reload: true
+        enabled: true
+        state: "{{ 'restarted' if proxmox_wireless_regulatory_unit.changed or ('country ' ~ proxmox_wireless_regulatory_country ~ ':') not in proxmox_wireless_regulatory_current.stdout else 'started' }}"
+      when: not ansible_check_mode
+
+    - name: Verify applied regulatory domain
+      ansible.builtin.command: /usr/sbin/iw reg get
+      register: proxmox_wireless_regulatory_verified
+      changed_when: false
+      until: "('country ' ~ proxmox_wireless_regulatory_country ~ ':') in proxmox_wireless_regulatory_verified.stdout"
+      retries: 5
+      delay: 2
+      when: not ansible_check_mode
