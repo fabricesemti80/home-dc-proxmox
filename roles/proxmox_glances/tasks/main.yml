@@ -1,0 +1,27 @@
+---
+- name: "========== ROLE: PROXMOX_GLANCES =========="
+  ansible.builtin.debug:
+    msg: Install the Glances system monitor without a background service.
+
+# Recommended packages pull a C preprocessor, Tk, fonts and numpy headers
+# (147 packages instead of 19) that a hypervisor does not need.
+- name: Install Glances without recommended packages
+  ansible.builtin.apt:
+    name: glances
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+
+# Read-only; also true in check mode, where the unit does not exist yet.
+- name: Check for the packaged Glances unit
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/glances.service
+  register: proxmox_glances_unit
+
+- name: Set the packaged Glances server state
+  ansible.builtin.systemd_service:
+    name: glances.service
+    enabled: "{{ proxmox_glances_service_enabled | bool }}"
+    state: "{{ 'started' if proxmox_glances_service_enabled | bool else 'stopped' }}"
+  when: proxmox_glances_unit.stat.exists

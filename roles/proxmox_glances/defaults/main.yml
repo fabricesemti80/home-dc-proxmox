@@ -1,0 +1,6 @@
+---
+# Debian's glances package enables and starts a background server
+# (`glances -s -B 127.0.0.1`, loopback only) on first install. The command-line
+# tool is what is wanted here, so that daemon is kept stopped and disabled.
+# Set to true to run the loopback-only server instead.
+proxmox_glances_service_enabled: false

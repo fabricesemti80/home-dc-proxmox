@@ -18,6 +18,8 @@
       tags: updates
     - role: proxmox_packages
       tags: packages
+    - role: proxmox_glances
+      tags: glances
     - role: proxmox_wireless_regulatory
       tags: wireless-regulatory
     - role: proxmox_storage
