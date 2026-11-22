@@ -16,6 +16,16 @@ tasks:
     cmds:
       - ansible-playbook -i inventory site.yml --tags packages
 
+  glances-plan:
+    desc: Preview the Glances system monitor installation
+    cmds:
+      - ansible-playbook -i inventory site.yml --check --diff --tags glances
+
+  glances-apply:
+    desc: Install the Glances system monitor
+    cmds:
+      - ansible-playbook -i inventory site.yml --tags glances
+
   wireless-regulatory-plan:
     desc: Preview optional wireless regulatory configuration
     cmds:
