@@ -6,6 +6,12 @@
 
 AWX runs `site.yml` **in check mode only** for now, limited by tags to roles that cannot reboot the host or change storage. Not run from AWX: `updates`, `storage`, `nfs`, `gpu`/`passthrough`, `ssd-passthrough`, `reboot.yml` and `shutdown.yml` (the AWX workers are VMs on `pve-00`, so a reboot or storage change would kill the controller mid-run). The two credential roles that write to Doppler (`terraform-credentials`, `monitoring-credentials`) also stay local because the AWX token is read-only.
 
+## Verified 2026-11-26
+
+Job template `pve-00 check (safe tags)` (check mode, diff on, tags `packages,mail,hardware-monitoring`, limit `pve-00`) ran successfully in AWX with the execution environment `home-dc-proxmox EE` (the published image, pinned by digest in AWX): `ok=28, changed=0, failed=0, skipped=17`. The Doppler reads in the `mail` and `hardware-monitoring` roles completed using the `home-dc-awx/prd` token. The hardware-monitoring tasks that were skipped are the role's own conditions; the reason was not investigated. Job pods reach `pve-00` from the allowed worker IPs, and the pinned host key is accepted.
+
+The AWX objects (project, inventory, credentials, execution environment, job template) were created through the AWX API, not from Git. If AWX is rebuilt they must be recreated; the Doppler token is reissued as described in the secrets inventory. The template's extra variables set `proxmox_mail_doppler_project` and `proxmox_hardware_monitoring_doppler_project` to `home-dc-awx`.
+
 ## Components
 
 | Piece | Where |
