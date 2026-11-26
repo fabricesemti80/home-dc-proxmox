@@ -12,6 +12,8 @@ The inventory of every secret, credential and environment variable this reposito
 
 The service token is held in the operator's macOS Keychain and saved with `task doppler-token-save`. It can read and change every secret in `home-dc-proxmox/prd` and nothing else.
 
+A second, **read-only** service token named `awx-readonly` (created 2026-11-26) authenticates AWX job runs. It can read every secret in `home-dc-proxmox/prd` (a Doppler service token is config-wide) and cannot write. Its value is stored as `AWX_DOPPLER_TOKEN` (below) and entered in the AWX credential `Doppler (home-dc-proxmox/prd, read-only)`. See [AWX](awx.md).
+
 ## Secrets in Doppler `home-dc-proxmox/prd`
 
 | Name | Written by | Read by | Function |
@@ -24,6 +26,8 @@ The service token is held in the operator's macOS Keychain and saved with `task 
 | `MONITORING_HW_CA_CERT` | `home-dc-kubernetes/scripts/monitoring-remote-pki.py` | `roles/proxmox_hardware_monitoring` | CA that signs the hardware exporter's client certificates (mTLS trust root on the host). |
 | `MONITORING_HW_SERVER_CERT` | `home-dc-kubernetes/scripts/monitoring-remote-pki.py` | `roles/proxmox_hardware_monitoring` | TLS server certificate for the node exporter on `10.0.40.10:9100`. |
 | `MONITORING_HW_SERVER_KEY` | `home-dc-kubernetes/scripts/monitoring-remote-pki.py` | `roles/proxmox_hardware_monitoring` | Private key for the server certificate. See [hardware monitoring](hardware-monitoring.md). |
+| `AWX_DOPPLER_TOKEN` | Operator (2026-11-26, `doppler configs tokens create awx-readonly`) | AWX credential `Doppler (home-dc-proxmox/prd, read-only)` | Read-only Doppler token AWX injects as `DOPPLER_TOKEN` into jobs. Escrow copy; rotate by revoking `awx-readonly` and recreating it. |
+| `AWX_PVE_SSH_PRIVATE_KEY` | Operator (2026-11-26, `ssh-keygen -t ed25519`) | AWX credential `pve-00 root (AWX)` | Private half of the dedicated AWX key for root SSH on `pve-00`. The public half is in `/root/.ssh/authorized_keys` on `pve-00` with `from="10.0.40.95,10.0.40.96,10.0.40.97"` and no forwarding. |
 
 ## Local secrets (outside Doppler)
 
@@ -31,6 +35,7 @@ The service token is held in the operator's macOS Keychain and saved with `task 
 | --- | --- | --- |
 | Doppler service token | macOS Keychain, service `home-dc-doppler-proxmox`, account `$USER` | Authenticates every Doppler call from the Ansible controller. Written by `scripts/save-doppler-token.py`. |
 | SSH key for `pve-00` | Operator's SSH agent / `~/.ssh` (alias `pve-00`) | Root SSH used by Ansible. |
+| `pve-00` `authorized_keys` entry `awx-home-dc-proxmox` | `/root/.ssh/authorized_keys` on `pve-00` (symlink to `/etc/pve/priv/authorized_keys`) | Public key for AWX; restricted to the app-cluster worker IPs. Remove the line to revoke. |
 | `files/root_pve_rsa`, `tokens/`, `.env`, `.envrc`, `.env.*` | Git-ignored | Legacy or local credential files. Not read by the active playbook; do not commit. |
 
 ## Environment variables
