@@ -24,7 +24,41 @@
       Components: pve-no-subscription
       Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
 
-- name: Upgrade installed packages
+- name: Report package upgrades (check mode)
   ansible.builtin.apt:
     update_cache: true
     upgrade: dist
+    lock_timeout: 300
+  when: ansible_check_mode
+
+# The upgrade restarts pve-cluster, which briefly unmounts /etc/pve (root's
+# authorized_keys is a symlink into it), so a new SSH login can fail mid-upgrade.
+# Run it detached and poll, tolerating unreachable polls, so a dropped session
+# cannot interrupt dpkg. Async tasks are skipped in check mode, hence the task above.
+- name: Start package upgrade detached from the SSH session
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+    lock_timeout: 300
+  async: 3600
+  poll: 0
+  register: proxmox_updates_job
+  when: not ansible_check_mode
+
+- name: Wait for the package upgrade to finish
+  ansible.builtin.async_status:
+    jid: "{{ proxmox_updates_job.ansible_job_id }}"
+  register: proxmox_updates_status
+  until: proxmox_updates_status.finished | default(false)
+  retries: 240
+  delay: 15
+  ignore_unreachable: true
+  when: not ansible_check_mode
+
+- name: Require a successful package upgrade
+  ansible.builtin.assert:
+    that: proxmox_updates_status.failed is not defined or not proxmox_updates_status.failed
+    fail_msg: >-
+      The package upgrade failed or was interrupted. On pve-00 run
+      `dpkg --configure -a` and `apt -f install`, then re-run this role.
+  when: not ansible_check_mode

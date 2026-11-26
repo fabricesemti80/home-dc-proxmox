@@ -12,6 +12,20 @@ Job template `pve-00 check (safe tags)` (check mode, diff on, tags `packages,mai
 
 The AWX objects (project, inventory, credentials, execution environment, job template) were created through the AWX API, not from Git. If AWX is rebuilt they must be recreated; the Doppler token is reissued as described in the secrets inventory. The template's extra variables set `proxmox_mail_doppler_project` and `proxmox_hardware_monitoring_doppler_project` to `home-dc-awx`.
 
+## Job templates and the updates workflow
+
+| AWX object | What it runs |
+| --- | --- |
+| `pve-00 check (safe tags)` | `site.yml --check --diff`, tags `packages,mail,hardware-monitoring` |
+| `pve-00 plan (full, check)` | `site.yml --check --diff` for every role except `terraform-credentials` and `monitoring-credentials` (they need `home-dc-proxmox/prd`, which AWX cannot read). The AWX equivalent of `task plan`. |
+| `pve-00 updates (check)` | `updates` role in check mode: reports whether a dist-upgrade is pending |
+| `pve-00 updates (APPLY)` | The real `apt dist-upgrade`. Never launch it directly. |
+| Workflow `pve-00 updates (gated)` | updates check, then a manual approval, then the apply template |
+
+The upgrade restarts `pve-cluster`, which briefly unmounts `/etc/pve`; root's `authorized_keys` on `pve-00` is a symlink into it, so a new SSH login can fail during the upgrade. The role therefore runs the upgrade detached (`async`, `poll: 0`) and polls with retries that tolerate unreachable results. In check mode a separate, synchronous task still reports the pending upgrade (async tasks are skipped in check mode). The detached path has not yet been exercised by a real upgrade. If an apply job dies, run `dpkg --configure -a` and `apt -f install` on `pve-00` (locally over SSH), then re-run.
+
+A pending **kernel or microcode** update needs a reboot to take effect, and running VMs keep the old QEMU until they restart. `reboot.yml` stays local: rebooting `pve-00` stops the VMs that host AWX.
+
 ## Components
 
 | Piece | Where |
