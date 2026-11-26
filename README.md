@@ -34,6 +34,8 @@ opts this host into GB. See [host packages and wireless regulation](docs/host-pa
 without recommended packages and without its background service; run `glances` over SSH.
 See [Glances](docs/glances.md).
 
+The playbook can also be run from AWX in check mode; see [AWX](docs/awx.md).
+
 1. `roles/proxmox_updates/` — disable subscription-only sources, enable no-subscription PVE, upgrade packages. Repository URL and suite are in `defaults/main.yml`.
 2. `roles/proxmox_storage/` — verify the HDD identity, create `slow` ZFS pool if absent, register descriptive Proxmox IDs `local-nvme` and `local-hdd`. Disk WWN, expected serial, pool and storage names are in `defaults/main.yml`. The default `local` ID is never changed.
 3. `roles/proxmox_nfs/` — register NAS template, ISO, and backup exports with Proxmox content restrictions. The backup share is limited to VZDump archives; no PBS datastore is mapped.

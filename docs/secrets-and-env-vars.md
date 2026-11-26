@@ -12,6 +12,18 @@ The inventory of every secret, credential and environment variable this reposito
 
 The service token is held in the operator's macOS Keychain and saved with `task doppler-token-save`. It can read and change every secret in `home-dc-proxmox/prd` and nothing else.
 
+## Doppler `home-dc-awx/prd` (AWX job runs)
+
+A separate Doppler project holds only what AWX-run roles read, so an AWX job (or a compromised AWX) cannot reach the rest of `home-dc-proxmox/prd` (for example `PROXMOX_TOKEN_SECRET`, the Terraform administrator token). Created 2026-11-26.
+
+| Name | Source | Read by | Function |
+| --- | --- | --- | --- |
+| `GMAIL_APP_PASSWORD` | Reference to `${home-dc-proxmox.prd.GMAIL_APP_PASSWORD}` | `roles/proxmox_mail` via AWX | Same value; follows rotation in `prd`. |
+| `MONITORING_HW_CA_CERT`, `MONITORING_HW_SERVER_CERT`, `MONITORING_HW_SERVER_KEY` | References to the same names in `home-dc-proxmox/prd` | `roles/proxmox_hardware_monitoring` via AWX | Same values. |
+| `AWX_PVE_SSH_PRIVATE_KEY` | Operator (2026-11-26, `ssh-keygen -t ed25519`), real value | AWX credential `pve-00 root (AWX)` | Escrow of the dedicated AWX key for root SSH on `pve-00`. Public half: see Local secrets. |
+
+Read-only service token `awx-jobs-readonly` (config `prd`). It cannot write and cannot read `home-dc-proxmox`. Its value is held only in the AWX credential `Doppler (home-dc-awx/prd, read-only)`; rotate by creating a new token, updating that credential, then revoking the old one. The job template sets `proxmox_mail_doppler_project` and `proxmox_hardware_monitoring_doppler_project` to `home-dc-awx` via extra variables. The earlier `awx-readonly` token on `home-dc-proxmox/prd` and the `AWX_*` secrets there were removed the same day.
+
 ## Secrets in Doppler `home-dc-proxmox/prd`
 
 | Name | Written by | Read by | Function |
@@ -31,6 +43,7 @@ The service token is held in the operator's macOS Keychain and saved with `task 
 | --- | --- | --- |
 | Doppler service token | macOS Keychain, service `home-dc-doppler-proxmox`, account `$USER` | Authenticates every Doppler call from the Ansible controller. Written by `scripts/save-doppler-token.py`. |
 | SSH key for `pve-00` | Operator's SSH agent / `~/.ssh` (alias `pve-00`) | Root SSH used by Ansible. |
+| `pve-00` `authorized_keys` entry `awx-home-dc-proxmox` | `/root/.ssh/authorized_keys` on `pve-00` (symlink to `/etc/pve/priv/authorized_keys`) | Public key for AWX; restricted to the app-cluster worker IPs. Remove the line to revoke. |
 | `files/root_pve_rsa`, `tokens/`, `.env`, `.envrc`, `.env.*` | Git-ignored | Legacy or local credential files. Not read by the active playbook; do not commit. |
 
 ## Environment variables
