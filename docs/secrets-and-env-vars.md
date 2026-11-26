@@ -12,7 +12,17 @@ The inventory of every secret, credential and environment variable this reposito
 
 The service token is held in the operator's macOS Keychain and saved with `task doppler-token-save`. It can read and change every secret in `home-dc-proxmox/prd` and nothing else.
 
-A second, **read-only** service token named `awx-readonly` (created 2026-11-26) authenticates AWX job runs. It can read every secret in `home-dc-proxmox/prd` (a Doppler service token is config-wide) and cannot write. Its value is stored as `AWX_DOPPLER_TOKEN` (below) and entered in the AWX credential `Doppler (home-dc-proxmox/prd, read-only)`. See [AWX](awx.md).
+## Doppler `home-dc-awx/prd` (AWX job runs)
+
+A separate Doppler project holds only what AWX-run roles read, so an AWX job (or a compromised AWX) cannot reach the rest of `home-dc-proxmox/prd` (for example `PROXMOX_TOKEN_SECRET`, the Terraform administrator token). Created 2026-11-26.
+
+| Name | Source | Read by | Function |
+| --- | --- | --- | --- |
+| `GMAIL_APP_PASSWORD` | Reference to `${home-dc-proxmox.prd.GMAIL_APP_PASSWORD}` | `roles/proxmox_mail` via AWX | Same value; follows rotation in `prd`. |
+| `MONITORING_HW_CA_CERT`, `MONITORING_HW_SERVER_CERT`, `MONITORING_HW_SERVER_KEY` | References to the same names in `home-dc-proxmox/prd` | `roles/proxmox_hardware_monitoring` via AWX | Same values. |
+| `AWX_PVE_SSH_PRIVATE_KEY` | Operator (2026-11-26, `ssh-keygen -t ed25519`), real value | AWX credential `pve-00 root (AWX)` | Escrow of the dedicated AWX key for root SSH on `pve-00`. Public half: see Local secrets. |
+
+Read-only service token `awx-jobs-readonly` (config `prd`). It cannot write and cannot read `home-dc-proxmox`. Its value is held only in the AWX credential `Doppler (home-dc-awx/prd, read-only)`; rotate by creating a new token, updating that credential, then revoking the old one. The job template sets `proxmox_mail_doppler_project` and `proxmox_hardware_monitoring_doppler_project` to `home-dc-awx` via extra variables. The earlier `awx-readonly` token on `home-dc-proxmox/prd` and the `AWX_*` secrets there were removed the same day.
 
 ## Secrets in Doppler `home-dc-proxmox/prd`
 
@@ -26,8 +36,6 @@ A second, **read-only** service token named `awx-readonly` (created 2026-11-26) 
 | `MONITORING_HW_CA_CERT` | `home-dc-kubernetes/scripts/monitoring-remote-pki.py` | `roles/proxmox_hardware_monitoring` | CA that signs the hardware exporter's client certificates (mTLS trust root on the host). |
 | `MONITORING_HW_SERVER_CERT` | `home-dc-kubernetes/scripts/monitoring-remote-pki.py` | `roles/proxmox_hardware_monitoring` | TLS server certificate for the node exporter on `10.0.40.10:9100`. |
 | `MONITORING_HW_SERVER_KEY` | `home-dc-kubernetes/scripts/monitoring-remote-pki.py` | `roles/proxmox_hardware_monitoring` | Private key for the server certificate. See [hardware monitoring](hardware-monitoring.md). |
-| `AWX_DOPPLER_TOKEN` | Operator (2026-11-26, `doppler configs tokens create awx-readonly`) | AWX credential `Doppler (home-dc-proxmox/prd, read-only)` | Read-only Doppler token AWX injects as `DOPPLER_TOKEN` into jobs. Escrow copy; rotate by revoking `awx-readonly` and recreating it. |
-| `AWX_PVE_SSH_PRIVATE_KEY` | Operator (2026-11-26, `ssh-keygen -t ed25519`) | AWX credential `pve-00 root (AWX)` | Private half of the dedicated AWX key for root SSH on `pve-00`. The public half is in `/root/.ssh/authorized_keys` on `pve-00` with `from="10.0.40.95,10.0.40.96,10.0.40.97"` and no forwarding. |
 
 ## Local secrets (outside Doppler)
 

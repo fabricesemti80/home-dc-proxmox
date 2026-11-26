@@ -13,14 +13,14 @@ AWX runs `site.yml` **in check mode only** for now, limited by tags to roles tha
 | Execution environment image | `ghcr.io/fabricesemti80/home-dc-proxmox-awx-ee`, built from `execution-environment/Dockerfile` by `.github/workflows/awx-execution-environment.yml` (base: AWX EE 24.6.1 pinned by digest, plus the pinned Doppler CLI). |
 | Project | This public repository, branch `main`. No deploy key needed. |
 | Inventory | `pve` group with `pve-00` (10.0.40.10) |
-| Credentials | `pve-00 root (AWX)` (machine, dedicated key), `Doppler (home-dc-proxmox/prd, read-only)` (custom type injecting `DOPPLER_TOKEN`). Values: see [secrets inventory](secrets-and-env-vars.md). |
+| Credentials | `pve-00 root (AWX)` (machine, dedicated key), `Doppler (home-dc-awx/prd, read-only)` (custom type injecting `DOPPLER_TOKEN`). Values: see [secrets inventory](secrets-and-env-vars.md). |
 
 ## Security
 
 - AWX holds a root key for the hypervisor and a read-only token for `home-dc-proxmox/prd`. A compromise of AWX therefore reaches `pve-00`. The key is restricted by source IP (the three app-cluster workers) but not by command, because Ansible needs a shell.
 - AWX is reachable at `awx.krapulax.home` and, through Cloudflare Access with Google sign-in, at `awx.krapulax.dev`. Whether to keep the external route is an open decision (see the `home-dc-kubernetes` AWX design).
-- The Doppler token reads the whole `prd` config (Gmail app password, Proxmox API token). A narrower scope needs a separate Doppler config.
+- The Doppler token is scoped to the separate project `home-dc-awx`, which holds only the Gmail app password, the hardware-monitoring certificates (as references) and the AWX SSH key. It cannot read `home-dc-proxmox/prd`, so jobs cannot obtain the Terraform administrator token. A branch config would not isolate this, because branch configs inherit every root secret. Whoever can run a job with the Doppler credential can still read those few values, and the SSH key is readable by any job using either credential.
 
 ## Rollback
 
-Delete the AWX job template, project and credentials; revoke the Doppler token `awx-readonly`; remove the `awx-home-dc-proxmox` line from `/root/.ssh/authorized_keys` on `pve-00`; delete the `AWX_*` secrets in Doppler. Local runs are unaffected.
+Delete the AWX job template, project and credentials; revoke the Doppler token `awx-jobs-readonly`; remove the `awx-home-dc-proxmox` line from `/root/.ssh/authorized_keys` on `pve-00`; delete the Doppler project `home-dc-awx`. Local runs are unaffected.
