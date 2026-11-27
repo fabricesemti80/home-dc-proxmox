@@ -1,0 +1,39 @@
+{
+  "organization": "Default",
+  "inventory": "pve",
+  "group": "pve",
+  "host": "pve-00",
+  "host_variables": {
+    "ansible_host": "10.0.40.10",
+    "ansible_ssh_common_args": "-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o \"KnownHostsCommand=/bin/echo 10.0.40.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEe4igb/fQB5ujUc53Nivn1FjaN59XHW5iL2+ayEs+d3\""
+  },
+  "project": {
+    "name": "home-dc-proxmox",
+    "scm_type": "git",
+    "scm_url": "https://github.com/fabricesemti80/home-dc-proxmox.git",
+    "scm_branch": "main",
+    "scm_update_on_launch": true
+  },
+  "execution_environment": {
+    "name": "home-dc-proxmox EE",
+    "image": "ghcr.io/fabricesemti80/home-dc-proxmox-awx-ee@sha256:0f146cf078a7447b3363772736ebb34f36b797fea7df07014d816f91e350a7e5",
+    "pull": "missing"
+  },
+  "machine_credential": "pve-00 root (AWX)",
+  "doppler_credential": "Doppler (home-dc-awx/prd, read-only)",
+  "doppler_credential_type": "Doppler service token",
+  "extra_vars": {
+    "proxmox_mail_doppler_project": "home-dc-awx",
+    "proxmox_mail_doppler_config": "prd",
+    "proxmox_hardware_monitoring_doppler_project": "home-dc-awx",
+    "proxmox_hardware_monitoring_doppler_config": "prd"
+  },
+  "templates": [
+    {"name": "pve-00 check (safe tags)", "job_type": "check", "job_tags": "packages,mail,hardware-monitoring"},
+    {"name": "pve-00 plan (full, check)", "job_type": "check", "skip_tags": "terraform-credentials,monitoring-credentials"},
+    {"name": "pve-00 updates (check)", "job_type": "check", "job_tags": "updates"},
+    {"name": "pve-00 updates (APPLY)", "job_type": "run", "job_tags": "updates"}
+  ],
+  "workflow": "pve-00 updates (gated)",
+  "approval": "Review the updates check output, then approve"
+}
