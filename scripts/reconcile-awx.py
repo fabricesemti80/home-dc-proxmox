@@ -39,11 +39,15 @@ class AWX:
     def list(self, path):
         results = []
         while path:
+            if path.startswith(self.url):
+                path = path[len(self.url):]
+            elif path.startswith("/api/v2/"):
+                path = path[len("/api/v2/"):]
+            elif path.startswith(("http://", "https://", "/")):
+                raise RuntimeError("AWX pagination link leaves the configured API")
             page = self.request(path)
             results.extend(page["results"])
             path = page["next"]
-            if path and path.startswith(self.url):
-                path = path[len(self.url):]
         return results
 
     def find(self, collection, name):
@@ -139,7 +143,8 @@ def reconcile(api, cfg, rotate=False):
     group = api.ensure("groups/", cfg["group"], {"inventory": inv["id"]})
     host = api.ensure("hosts/", cfg["host"], {"inventory": inv["id"],
                        "variables": json.dumps(cfg["host_variables"], sort_keys=True)})
-    api.association(f"groups/{group['id']}/hosts/", host["id"])
+    if group and host:
+        api.association(f"groups/{group['id']}/hosts/", host["id"])
     templates = {}
     for entry in cfg["templates"]:
         fields = {"organization": oid, "inventory": inv["id"], "project": project["id"],
@@ -148,12 +153,43 @@ def reconcile(api, cfg, rotate=False):
                   "extra_vars": json.dumps(cfg["extra_vars"], sort_keys=True),
                   "job_tags": "", "skip_tags": "", **{k: v for k, v in entry.items() if k != "name"}}
         job = api.ensure("job_templates/", entry["name"], fields)
-        for cred in (machine, doppler):
-            api.association(f"job_templates/{job['id']}/credentials/", cred["id"])
+        if job:
+            for cred in (machine, doppler):
+                api.association(f"job_templates/{job['id']}/credentials/", cred["id"])
         templates[entry["name"]] = job
     workflow = api.ensure("workflow_job_templates/", cfg["workflow"], {"organization": oid,
                            "inventory": inv["id"], "limit": cfg["host"]})
+    if not workflow or any(job is None for job in templates.values()):
+        return
     nodes_path = f"workflow_job_templates/{workflow['id']}/workflow_nodes/"
+    existing_nodes = api.list(nodes_path + "?page_size=200")
+    names = {"updates-check": cfg["templates"][2]["name"],
+             "approval": cfg["approval"],
+             "updates-apply": cfg["templates"][3]["name"]}
+    managed = {}
+    for item in existing_nodes:
+        summary = item.get("summary_fields", {}).get("unified_job_template", {})
+        matches = [key for key, name in names.items()
+                   if item["identifier"] == key or summary.get("name") == name]
+        if len(matches) != 1 or matches[0] in managed:
+            raise RuntimeError("unexpected or duplicate node in managed updates workflow")
+        key = matches[0]
+        expected_type = "workflow_approval" if key == "approval" else "job"
+        if summary and (summary.get("name") != names[key] or
+                        summary.get("unified_job_type") != expected_type):
+            raise RuntimeError(f"invalid workflow node: {key}")
+        if key == "approval" and item.get("unified_job_template") and not summary:
+            raise RuntimeError("approval node type cannot be verified")
+        managed[key] = item
+    for key, item in managed.items():
+        expected = {"updates-check": "approval", "approval": "updates-apply"}.get(key)
+        allowed = {managed[expected]["id"]} if expected in managed else set()
+        for edge in ("success_nodes", "failure_nodes", "always_nodes"):
+            targets = {child["id"] for child in api.list(
+                f"workflow_job_template_nodes/{item['id']}/{edge}/?page_size=200")}
+            if targets - (allowed if edge == "success_nodes" else set()):
+                raise RuntimeError(f"unexpected {edge} edge on {key}; refusing to reconcile")
+
     def node(identifier, template=None):
         matches = [n for n in api.list(nodes_path + "?page_size=200") if
                    n["identifier"] == identifier or

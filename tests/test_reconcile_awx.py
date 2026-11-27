@@ -32,7 +32,8 @@ class MemoryAWX(reconciler.AWX):
                 for node in nodes:
                     if node["id"] == node_id:
                         node["unified_job_template"] = self.next_id
-                        node["summary_fields"] = {"unified_job_template": {"name": data["name"]}}
+                        node["summary_fields"] = {"unified_job_template": {
+                            "name": data["name"], "unified_job_type": "workflow_approval"}}
                         self.next_id += 1
                         return {}
         if path.endswith(("hosts/", "credentials/", "success_nodes/")) and data and "id" in data:
@@ -82,7 +83,8 @@ class ReconcileTests(unittest.TestCase):
             if node.get("unified_job_template") and "summary_fields" not in node:
                 template = next(t for t in api.objects["job_templates/"]
                                 if t["id"] == node["unified_job_template"])
-                node["summary_fields"] = {"unified_job_template": {"name": template["name"]}}
+                node["summary_fields"] = {"unified_job_template": {
+                    "name": template["name"], "unified_job_type": "job"}}
         self.assertEqual(run_reconcile(api), "")
         self.assertEqual(len(api.objects[path]), 3)
 
@@ -98,6 +100,52 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), "")
         self.assertEqual(api.calls, [])
 
+
+    def test_plan_reports_missing_dependent_objects(self):
+        for collection, name in (("groups/", "pve"), ("hosts/", "pve-00"),
+                                 ("job_templates/", "pve-00 updates (check)"),
+                                 ("workflow_job_templates/", CONFIG["workflow"])):
+            with self.subTest(collection=collection):
+                api = MemoryAWX()
+                run_reconcile(api)
+                api.objects[collection] = [item for item in api.objects[collection]
+                                           if item["name"] != name]
+                api.apply = False
+                api.calls.clear()
+                output = run_reconcile(api)
+                self.assertIn(f"create {collection}: {name}", output)
+                self.assertFalse(any(method != "GET" for _, method in api.calls))
+
+    def test_pagination_accepts_root_relative_and_absolute_links(self):
+        api = MemoryAWX(False)
+        api.url = "http://awx.example/api/v2/"
+        pages = iter([
+            {"results": [{"id": 1}], "next": "/api/v2/hosts/?page=2"},
+            {"results": [{"id": 2}], "next": "http://awx.example/api/v2/hosts/?page=3"},
+            {"results": [{"id": 3}], "next": None}])
+        with patch.object(api, "request", side_effect=lambda path: next(pages)) as request:
+            self.assertEqual(len(reconciler.AWX.list(api, "hosts/?page=1")), 3)
+        self.assertEqual([call.args[0] for call in request.call_args_list],
+                         ["hosts/?page=1", "hosts/?page=2", "hosts/?page=3"])
+
+    def test_rejects_workflow_bypass_and_nonapproval_node(self):
+        for failure in ("bypass", "wrong-type"):
+            with self.subTest(failure=failure):
+                api = MemoryAWX()
+                run_reconcile(api)
+                nodes = api.objects["workflow_job_templates/" +
+                                    str(api.objects["workflow_job_templates/"][0]["id"]) +
+                                    "/workflow_nodes/"]
+                check, approval, apply = nodes
+                if failure == "bypass":
+                    api.objects[f"workflow_job_template_nodes/{check['id']}/success_nodes/"].append(
+                        {"id": apply["id"]})
+                else:
+                    approval["summary_fields"]["unified_job_template"]["unified_job_type"] = "job"
+                api.calls.clear()
+                with self.assertRaises(RuntimeError):
+                    run_reconcile(api)
+                self.assertFalse(any(method != "GET" for _, method in api.calls))
 
 if __name__ == "__main__":
     unittest.main()
