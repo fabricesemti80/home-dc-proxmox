@@ -6,6 +6,16 @@ tasks:
       - task --list
     silent: true
 
+  awx-plan:
+    desc: Report drift in AWX objects without making changes
+    cmds:
+      - python3 scripts/reconcile-awx.py
+
+  awx-apply:
+    desc: Reconcile AWX objects without launching jobs
+    cmds:
+      - python3 scripts/reconcile-awx.py --apply
+
   packages-plan:
     desc: Preview host utility package installation
     cmds:

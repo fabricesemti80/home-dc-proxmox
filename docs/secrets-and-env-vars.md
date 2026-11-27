@@ -22,7 +22,7 @@ A separate Doppler project holds only what AWX-run roles read, so an AWX job (or
 | `MONITORING_HW_CA_CERT`, `MONITORING_HW_SERVER_CERT`, `MONITORING_HW_SERVER_KEY` | References to the same names in `home-dc-proxmox/prd` | `roles/proxmox_hardware_monitoring` via AWX | Same values. |
 | `AWX_PVE_SSH_PRIVATE_KEY` | Operator (2026-11-26, `ssh-keygen -t ed25519`), real value | AWX credential `pve-00 root (AWX)` | Escrow of the dedicated AWX key for root SSH on `pve-00`. Public half: see Local secrets. |
 
-Read-only service token `awx-jobs-readonly` (config `prd`). It cannot write and cannot read `home-dc-proxmox`. Its value is held only in the AWX credential `Doppler (home-dc-awx/prd, read-only)`; rotate by creating a new token, updating that credential, then revoking the old one. The job template sets `proxmox_mail_doppler_project` and `proxmox_hardware_monitoring_doppler_project` to `home-dc-awx` via extra variables. The earlier `awx-readonly` token on `home-dc-proxmox/prd` and the `AWX_*` secrets there were removed the same day.
+Read-only service token `awx-jobs-readonly` (config `prd`). It cannot write and cannot read `home-dc-proxmox`. Its value is held only in the AWX credential `Doppler (home-dc-awx/prd, read-only)`; rotate by creating a new token, updating that credential with `scripts/reconcile-awx.py --apply --rotate`, then revoking the old one. For a fresh AWX, pass it to the reconciler as `AWX_DOPPLER_TOKEN` once. The job template sets `proxmox_mail_doppler_project` and `proxmox_hardware_monitoring_doppler_project` to `home-dc-awx` via extra variables. The earlier `awx-readonly` token on `home-dc-proxmox/prd` and the `AWX_*` secrets there were removed the same day.
 
 ## Secrets in Doppler `home-dc-proxmox/prd`
 
@@ -50,6 +50,9 @@ Read-only service token `awx-jobs-readonly` (config `prd`). It cannot write and 
 
 | Variable | Where it's read | Source | Function |
 | --- | --- | --- | --- |
+| `AWX_URL`, `AWX_USERNAME`, `AWX_ADMIN_PASSWORD` | `scripts/reconcile-awx.py` | Optional operator shell overrides; URL defaults to `http://awx.krapulax.home`, username to `admin`, password to Doppler `home-dc-kubernetes/apps` (`awx-secrets` in Kubernetes) | Authenticates the AWX API over the trusted internal network. |
+| `AWX_DOPPLER_TOKEN` | `scripts/reconcile-awx.py` | Newly issued read-only `home-dc-awx/prd` service token, operator shell | Input to AWX's scoped Doppler credential on first creation or explicit rotation; never persisted in Git. |
+| `AWX_PVE_SSH_PRIVATE_KEY` | `scripts/reconcile-awx.py` | Optional operator shell override; otherwise Doppler `home-dc-awx/prd` secret with the same name | Dedicated root SSH machine credential on first creation or explicit rotation. |
 | `DOPPLER_TOKEN` | Role defaults of `proxmox_mail`, `proxmox_terraform_credentials`, `proxmox_monitoring_credentials`, `proxmox_hardware_monitoring` | Optional override; otherwise read from the Keychain item above | Doppler service token. Passed to `doppler` through the environment, never argv. |
 | `USER` | Role defaults, `scripts/save-doppler-token.py` | Shell | Keychain account name. |
 | `ANSIBLE_REMOTE_USER`, `ANSIBLE_PRIVATE_KEY_FILE` | `standalone/controller.py` | Operator shell (optional) | The only inherited `ANSIBLE_*` variables the standalone controller passes through. It **removes** every other inherited `ANSIBLE_*` variable before running `ansible-playbook`. |
